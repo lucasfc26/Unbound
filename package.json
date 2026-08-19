@@ -1,0 +1,21 @@
+{
+  "name": "maselview",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "pnpm --filter @maselview/web dev",
+    "dev:api": "pnpm --filter @maselview/api start:dev",
+    "build": "pnpm --filter @maselview/web build",
+    "build:api": "pnpm --filter @maselview/api build",
+    "lint": "pnpm --filter @maselview/web lint",
+    "lint:api": "pnpm --filter @maselview/api lint",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @maselview/api prisma:migrate",
+    "desktop:dev": "pnpm --filter @maselview/web tauri dev",
+    "desktop:build": "pnpm --filter @maselview/web tauri build"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

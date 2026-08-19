@@ -1,0 +1,88 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Superfícies */
+  --color-bg-primary: 10 10 12;
+  --color-bg-secondary: 16 16 19;
+  --color-surface: 22 22 26;
+  --color-surface-elevated: 29 29 34;
+  --color-surface-hover: 34 34 40;
+  --color-surface-active: 41 41 48;
+
+  /* Bordas */
+  --color-border: 38 38 44;
+  --color-border-strong: 54 54 62;
+
+  /* Texto */
+  --color-text-primary: 240 240 242;
+  --color-text-secondary: 154 154 164;
+  --color-text-muted: 104 104 114;
+
+  /* Destaque */
+  --color-accent: 124 108 255;
+  --color-accent-hover: 141 127 255;
+  --color-accent-active: 106 90 232;
+  --color-accent-muted: 124 108 255;
+
+  /* Status */
+  --color-success: 61 199 122;
+  --color-warning: 235 178 61;
+  --color-danger: 237 92 92;
+  --color-idle: 235 178 61;
+  --color-offline: 108 108 116;
+
+  /* Raio */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+}
+
+/*
+  Estrutura preparada para tema claro (não implementado nesta etapa).
+  Trocar o seletor abaixo para `:root[data-theme="light"]` e sobrescrever
+  os tokens acima quando o tema claro for desenvolvido.
+*/
+:root[data-theme="light"] {
+  --color-bg-primary: 10 10 12;
+  --color-bg-secondary: 16 16 19;
+  --color-surface: 22 22 26;
+  --color-surface-elevated: 29 29 34;
+  --color-surface-hover: 34 34 40;
+  --color-surface-active: 41 41 48;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg-primary text-text-primary antialiased;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-border-strong)) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--color-border-strong));
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

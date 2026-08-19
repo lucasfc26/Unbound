@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+.git
+.env
+.env.local
+apps/*/.env
+*.log
+.vscode
+.idea
+apps/web/src-tauri/target
+apps/web/src-tauri/gen

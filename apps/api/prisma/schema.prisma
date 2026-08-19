@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ONLINE
+  IDLE
+  DO_NOT_DISTURB
+  INVISIBLE
+  OFFLINE
+}
+
+enum ServerRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  BLOCKED
+}
+
+model User {
+  id           String     @id @default(uuid())
+  username     String     @unique
+  displayName  String
+  email        String     @unique
+  passwordHash String
+  avatarUrl    String?
+  status       UserStatus @default(OFFLINE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  ownedServers      Server[]       @relation("ServerOwner")
+  serverMemberships ServerMember[]
+  messages          Message[]
+  createdInvites    Invitation[]
+
+  friendshipsSent     Friendship[] @relation("FriendshipRequester")
+  friendshipsReceived Friendship[] @relation("FriendshipAddressee")
+
+  bansReceived ServerBan[] @relation("BannedUser")
+  bansIssued   ServerBan[] @relation("BannedBy")
+
+  @@map("users")
+}
+
+model Server {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  iconUrl     String?
+  iconColor   String   @default("#7c6cff")
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       User              @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members     ServerMember[]
+  categories  ChannelCategory[]
+  channels    Channel[]
+  invitations Invitation[]
+  bans        ServerBan[]
+
+  @@map("servers")
+}
+
+model ServerBan {
+  id         String   @id @default(uuid())
+  serverId   String
+  userId     String
+  reason     String?
+  bannedById String
+  createdAt  DateTime @default(now())
+
+  server   Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user     User   @relation("BannedUser", fields: [userId], references: [id], onDelete: Cascade)
+  bannedBy User   @relation("BannedBy", fields: [bannedById], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, userId])
+  @@map("server_bans")
+}
+
+model ServerMember {
+  id       String     @id @default(uuid())
+  userId   String
+  serverId String
+  role     ServerRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serverId])
+  @@map("server_members")
+}
+
+model ChannelCategory {
+  id       String @id @default(uuid())
+  serverId String
+  name     String
+  position Int    @default(0)
+
+  server   Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channels Channel[]
+
+  @@map("channel_categories")
+}
+
+model Channel {
+  id         String      @id @default(uuid())
+  serverId   String
+  categoryId String?
+  name       String
+  type       ChannelType @default(TEXT)
+  topic      String?
+  position   Int         @default(0)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  server   Server           @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  category ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  messages Message[]
+
+  @@map("channels")
+}
+
+model Message {
+  id          String    @id @default(uuid())
+  // Monotonic insertion order, used for sorting/pagination instead of createdAt:
+  // two messages created within the same millisecond (e.g. a burst over
+  // WebSocket) would otherwise tie on createdAt and sort non-deterministically.
+  sequence    BigInt    @default(autoincrement())
+  channelId   String
+  authorId    String
+  content     String
+  replyToId   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  editedAt    DateTime?
+  deletedAt   DateTime?
+  // Snapshot of the first URL's metadata, fetched once by the backend and cached — not
+  // re-derived from a live cache lookup on every read, so history stays stable over time.
+  linkPreview Json?
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, sequence])
+  @@map("messages")
+}
+
+model Friendship {
+  id          String           @id @default(uuid())
+  requesterId String
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@map("friendships")
+}
+
+model Invitation {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  serverId  String
+  creatorId String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+  maxUses   Int?
+  uses      Int       @default(0)
+
+  server  Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  creator User   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("invitations")
+}
