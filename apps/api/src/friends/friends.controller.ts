@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, type RequestUser } from '../auth/current-user.decorator';
 import { FriendsService } from './friends.service';
 import { SendFriendRequestDto } from './dto/send-friend-request.dto';
+import { SendFriendRequestByCodeDto } from './dto/send-friend-request-by-code.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller()
@@ -24,6 +25,14 @@ export class FriendsController {
     @Body() dto: SendFriendRequestDto,
   ) {
     return this.friends.sendRequest(user.id, dto);
+  }
+
+  @Post('friends/requests/by-code')
+  sendRequestByCode(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: SendFriendRequestByCodeDto,
+  ) {
+    return this.friends.sendRequestByCode(user.id, dto);
   }
 
   @Get('friends/requests')

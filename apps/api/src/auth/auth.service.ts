@@ -8,16 +8,19 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { RedisService } from '../redis/redis.service';
-import { toPublicUser, type PublicUser } from '../users/user.presenter';
+import { toPrivateUser, type PrivateUser } from '../users/user.presenter';
 import type { RegisterDto } from './dto/register.dto';
 import type { LoginDto } from './dto/login.dto';
+import type { UpdateAccountDto } from '../users/dto/update-account.dto';
+import type { ChangePasswordDto } from '../users/dto/change-password.dto';
+import type { DeleteAccountDto } from '../users/dto/delete-account.dto';
 
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL = '7d';
 export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export interface AuthResult {
-  user: PublicUser;
+  user: PrivateUser;
   accessToken: string;
   refreshToken: string;
 }
@@ -94,16 +97,51 @@ export class AuthService {
     await this.users.setStatus(userId, 'OFFLINE');
   }
 
-  async me(userId: string): Promise<PublicUser> {
-    const user = await this.users.findById(userId);
+  async me(userId: string): Promise<PrivateUser> {
+    const user = await this.users.findByIdWithSettings(userId);
     if (!user) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
-    return toPublicUser(user);
+    return toPrivateUser(user, user.settings);
+  }
+
+  async updateAccount(
+    userId: string,
+    dto: UpdateAccountDto,
+  ): Promise<PrivateUser> {
+    await this.verifyPassword(userId, dto.currentPassword);
+    const user = await this.users.updateAccount(userId, {
+      username: dto.username,
+      email: dto.email,
+    });
+    const withSettings = await this.users.findByIdWithSettings(user.id);
+    return toPrivateUser(user, withSettings?.settings ?? null);
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
+    await this.verifyPassword(userId, dto.currentPassword);
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.users.setPasswordHash(userId, passwordHash);
+  }
+
+  async deleteAccount(userId: string, dto: DeleteAccountDto): Promise<void> {
+    await this.verifyPassword(userId, dto.password);
+    await this.users.deleteAccount(userId);
+    await this.redis.del(this.refreshKey(userId));
+  }
+
+  private async verifyPassword(
+    userId: string,
+    password: string,
+  ): Promise<void> {
+    const user = await this.users.findById(userId);
+    if (!user) throw new UnauthorizedException('Usuário não encontrado');
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('Senha incorreta');
   }
 
   private async issueSession(userId: string): Promise<AuthResult> {
-    const user = await this.users.findById(userId);
+    const user = await this.users.findByIdWithSettings(userId);
     if (!user) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
@@ -131,7 +169,11 @@ export class AuthService {
       REFRESH_TOKEN_TTL_SECONDS,
     );
 
-    return { user: toPublicUser(user), accessToken, refreshToken };
+    return {
+      user: toPrivateUser(user, user.settings),
+      accessToken,
+      refreshToken,
+    };
   }
 
   private refreshKey(userId: string): string {

@@ -15,7 +15,12 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { VoiceSettings } from "@/components/settings/VoiceSettings";
+import { AccountSettings } from "@/components/settings/AccountSettings";
+import { ProfileSettings } from "@/components/settings/ProfileSettings";
+import { PrivacySettings } from "@/components/settings/PrivacySettings";
+import { NotificationSettings } from "@/components/settings/NotificationSettings";
 import { IconButton } from "@/components/ui/IconButton";
+import { Toaster } from "@/components/toast/Toaster";
 
 type SettingsSection =
   | "account"
@@ -41,7 +46,7 @@ const sections: { id: SettingsSection; label: string; icon: typeof User }[] = [
 export default function SettingsPage() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const [active, setActive] = useState<SettingsSection>("appearance");
+  const [active, setActive] = useState<SettingsSection>("account");
 
   return (
     <div className="flex h-screen w-screen bg-bg-primary text-text-primary">
@@ -78,6 +83,8 @@ export default function SettingsPage() {
           <SettingsPanel section={active} />
         </div>
       </div>
+
+      <Toaster />
     </div>
   );
 }
@@ -86,6 +93,14 @@ function SettingsPanel({ section }: { section: SettingsSection }) {
   const pushToast = useToastStore((state) => state.push);
 
   switch (section) {
+    case "account":
+      return <AccountSettings />;
+    case "profile":
+      return <ProfileSettings />;
+    case "privacy":
+      return <PrivacySettings />;
+    case "notifications":
+      return <NotificationSettings />;
     case "appearance":
       return <AppearanceSettings />;
     case "voice":

@@ -16,6 +16,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { RealtimeEmitterModule } from './realtime/realtime-emitter.module';
 import { FriendsModule } from './friends/friends.module';
 import { InvitationsModule } from './invitations/invitations.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { InvitationsModule } from './invitations/invitations.module';
     RealtimeModule,
     FriendsModule,
     InvitationsModule,
+    SettingsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

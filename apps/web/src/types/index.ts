@@ -9,9 +9,24 @@ export interface User {
   avatarUrl: string | null;
   avatarColor: string;
   status: UserStatus;
-  customStatus?: string;
-  bio?: string;
+  customStatus?: string | null;
+  bio?: string | null;
+  // Only ever populated for the authenticated user's own profile — never sent for other users.
+  friendCode?: string;
+  pronouns?: string | null;
   createdAt: string;
+}
+
+export type FriendRequestPrivacy = "EVERYONE" | "NOBODY";
+
+export interface UserSettings {
+  bio: string | null;
+  pronouns: string | null;
+  customStatus: string | null;
+  friendRequestPrivacy: FriendRequestPrivacy;
+  shareTypingStatus: boolean;
+  desktopNotifications: boolean;
+  notificationSound: boolean;
 }
 
 export type ServerRole = "OWNER" | "ADMIN" | "MODERATOR" | "MEMBER";

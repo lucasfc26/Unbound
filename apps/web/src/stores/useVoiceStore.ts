@@ -2,6 +2,7 @@ import { create, type StoreApi } from "zustand";
 import { getSocket } from "@/lib/socket";
 import { useAuthStore } from "./useAuthStore";
 import { useToastStore } from "./useToastStore";
+import { useDeviceStore } from "./useDeviceStore";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 const SPEAKING_THRESHOLD = 12;
@@ -189,8 +190,9 @@ async function performRealJoin(channelId: string, set: SetFn, get: GetFn) {
 
   let stream: MediaStream;
   try {
+    const { micDeviceId } = useDeviceStore.getState();
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+      audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
       video: false,
     });
   } catch {
@@ -555,8 +557,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       }
 
       try {
+        const { cameraDeviceId } = useDeviceStore.getState();
         const camStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: cameraDeviceId ? { deviceId: { exact: cameraDeviceId } } : true,
         });
         const [videoTrack] = camStream.getVideoTracks();
         state.localStream.addTrack(videoTrack);

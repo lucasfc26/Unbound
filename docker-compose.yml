@@ -38,7 +38,12 @@ services:
       - ./apps/api/.env
     environment:
       # Override the host-oriented values from .env with the in-network service names.
-      DATABASE_URL: postgresql://maselview:maselview@postgres:5432/maselview
+      # DATABASE_URL (app runtime) uses the unprivileged maselview_app role so Row-Level
+      # Security on user_settings is actually enforced; DIRECT_DATABASE_URL (migrations
+      # only) uses the superuser role, which needs DDL privileges RLS has nothing to do
+      # with — see prisma/migrations/20260819190000_app_role_least_privilege.
+      DATABASE_URL: postgresql://maselview_app:maselview_app@postgres:5432/maselview
+      DIRECT_DATABASE_URL: postgresql://maselview:maselview@postgres:5432/maselview
       REDIS_URL: redis://redis:6379
       PORT: 3000
       FRONTEND_URL: http://localhost:5173

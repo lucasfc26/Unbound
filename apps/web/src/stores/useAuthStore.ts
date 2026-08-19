@@ -3,16 +3,9 @@ import type { User, UserStatus } from "@/types";
 import { apiFetch, setAccessToken } from "@/lib/api";
 import { avatarColorFor } from "@/lib/avatarColor";
 import { getSocket } from "@/lib/socket";
+import type { ApiPrivateUser } from "@/lib/account";
 
-interface ApiUser {
-  id: string;
-  username: string;
-  displayName: string;
-  email: string;
-  avatarUrl: string | null;
-  status: User["status"];
-  createdAt: string;
-}
+type ApiUser = ApiPrivateUser;
 
 interface AuthResponse {
   user: ApiUser;
@@ -39,6 +32,9 @@ interface AuthState {
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
   setStatus: (status: UserStatus) => void;
+  updateUser: (apiUser: ApiUser) => void;
+  /** For when the account itself was just deleted — there's no server session left to log out of. */
+  clearSession: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => {
@@ -114,6 +110,16 @@ export const useAuthStore = create<AuthState>((set, get) => {
       socket.emit("presence:set_status", { status });
       const currentUser = get().user;
       if (currentUser) set({ user: { ...currentUser, status } });
+    },
+
+    updateUser: (apiUser) => {
+      set({ user: toUser(apiUser) });
+    },
+
+    clearSession: () => {
+      getSocket().disconnect();
+      setAccessToken(null);
+      set({ user: null, isAuthenticated: false });
     },
   };
 });

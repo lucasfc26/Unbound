@@ -6,14 +6,18 @@ import {
   X,
   Users,
   UserMinus,
+  Copy,
+  RefreshCw,
 } from "lucide-react";
 import {
   useFriendsStore,
   type FriendEntry,
   type FriendRequestEntry,
 } from "@/stores/useFriendsStore";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { ApiError } from "@/lib/api";
+import { regenerateFriendCode } from "@/lib/account";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
@@ -21,6 +25,10 @@ import { Input } from "@/components/ui/Input";
 import { statusLabels } from "@/lib/status";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { cn } from "@/lib/cn";
+
+function formatFriendCode(code: string): string {
+  return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+}
 
 type Tab = "online" | "all" | "pending" | "blocked";
 
@@ -39,8 +47,12 @@ export default function FriendsPage() {
   const fetchAll = useFriendsStore((state) => state.fetchAll);
   const sendRequest = useFriendsStore((state) => state.sendRequest);
 
+  const sendRequestByCode = useFriendsStore((state) => state.sendRequestByCode);
+
   const [tab, setTab] = useState<Tab>("online");
+  const [addMode, setAddMode] = useState<"username" | "code">("username");
   const [addUsername, setAddUsername] = useState("");
+  const [addCode, setAddCode] = useState("");
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -57,13 +69,36 @@ export default function FriendsPage() {
 
   async function handleAddFriend(event: FormEvent) {
     event.preventDefault();
-    const username = addUsername.trim();
-    if (!username || sending) return;
+    if (sending) return;
+
+    if (addMode === "username") {
+      const username = addUsername.trim();
+      if (!username) return;
+      setSending(true);
+      try {
+        await sendRequest(username);
+        pushToast("success", `Solicitação enviada para ${username}`);
+        setAddUsername("");
+      } catch (error) {
+        pushToast(
+          "error",
+          error instanceof ApiError
+            ? error.message
+            : "Não foi possível enviar a solicitação",
+        );
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    const code = addCode.trim();
+    if (!code) return;
     setSending(true);
     try {
-      await sendRequest(username);
-      pushToast("success", `Solicitação enviada para ${username}`);
-      setAddUsername("");
+      await sendRequestByCode(code);
+      pushToast("success", "Solicitação enviada");
+      setAddCode("");
     } catch (error) {
       pushToast(
         "error",
@@ -126,26 +161,124 @@ export default function FriendsPage() {
           />
         )}
 
-        <div className="mt-8 max-w-md rounded-lg border border-border bg-surface p-4">
-          <h2 className="mb-1 flex items-center gap-2 text-small font-semibold text-text-primary">
-            <UserPlus className="h-4 w-4" />
-            Adicionar amigo
-          </h2>
-          <p className="mb-3 text-small text-text-secondary">
-            Você pode adicionar amigos pelo nome de usuário.
-          </p>
-          <form onSubmit={handleAddFriend} className="flex gap-2">
-            <Input
-              placeholder="nome-de-usuario"
-              value={addUsername}
-              onChange={(event) => setAddUsername(event.target.value)}
-              className="flex-1"
-            />
-            <Button type="submit" disabled={sending}>
-              {sending ? "Enviando..." : "Enviar"}
-            </Button>
-          </form>
+        <div className="mt-8 flex max-w-md flex-col gap-4">
+          <FriendCodeCard />
+
+          <div className="rounded-lg border border-border bg-surface p-4">
+            <h2 className="mb-1 flex items-center gap-2 text-small font-semibold text-text-primary">
+              <UserPlus className="h-4 w-4" />
+              Adicionar amigo
+            </h2>
+            <div className="mb-3 flex items-center gap-1">
+              {(["username", "code"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setAddMode(mode)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-caption font-medium text-text-secondary hover:bg-hover hover:text-text-primary",
+                    addMode === mode && "bg-active text-text-primary",
+                  )}
+                >
+                  {mode === "username" ? "Por usuário" : "Por código"}
+                </button>
+              ))}
+            </div>
+            <form onSubmit={handleAddFriend} className="flex gap-2">
+              {addMode === "username" ? (
+                <Input
+                  placeholder="nome-de-usuario"
+                  value={addUsername}
+                  onChange={(event) => setAddUsername(event.target.value)}
+                  className="flex-1"
+                />
+              ) : (
+                <Input
+                  placeholder="AB3D-9F2K"
+                  value={addCode}
+                  onChange={(event) => setAddCode(event.target.value)}
+                  className="flex-1"
+                />
+              )}
+              <Button type="submit" disabled={sending}>
+                {sending ? "Enviando..." : "Enviar"}
+              </Button>
+            </form>
+          </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function FriendCodeCard() {
+  const user = useAuthStore((state) => state.user);
+  const updateUser = useAuthStore((state) => state.updateUser);
+  const pushToast = useToastStore((state) => state.push);
+  const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  if (!user?.friendCode) return null;
+
+  async function handleCopy() {
+    if (!user?.friendCode) return;
+    await navigator.clipboard.writeText(formatFriendCode(user.friendCode));
+    setCopied(true);
+    pushToast("success", "Código copiado");
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleRegenerate() {
+    if (regenerating) return;
+    setRegenerating(true);
+    try {
+      const updated = await regenerateFriendCode();
+      updateUser(updated);
+      pushToast("success", "Novo código gerado");
+    } catch (error) {
+      pushToast(
+        "error",
+        error instanceof ApiError
+          ? error.message
+          : "Não foi possível gerar um novo código",
+      );
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-surface p-4">
+      <h2 className="mb-1 text-small font-semibold text-text-primary">
+        Seu código de amigo
+      </h2>
+      <p className="mb-3 text-small text-text-secondary">
+        Compartilhe este código para que alguém te adicione sem saber seu
+        nome de usuário.
+      </p>
+      <div className="flex items-center gap-2 rounded-md border border-border bg-bg-primary px-3 py-2.5">
+        <span className="flex-1 truncate font-mono text-body text-text-primary">
+          {formatFriendCode(user.friendCode)}
+        </span>
+        <IconButton
+          aria-label="Copiar código de amigo"
+          size="sm"
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-success" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </IconButton>
+        <IconButton
+          aria-label="Gerar novo código"
+          size="sm"
+          disabled={regenerating}
+          onClick={handleRegenerate}
+        >
+          <RefreshCw className={cn("h-4 w-4", regenerating && "animate-spin")} />
+        </IconButton>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ export interface ApiPublicUser {
   avatarUrl: string | null;
   status: UserStatus;
   createdAt: string;
+  customStatus?: string | null;
 }
 
 export interface ApiFriendRequest {
@@ -38,6 +39,13 @@ export function sendFriendRequest(username: string) {
   return apiFetch<unknown>("/friends/requests", {
     method: "POST",
     body: { username },
+  });
+}
+
+export function sendFriendRequestByCode(code: string) {
+  return apiFetch<unknown>("/friends/requests/by-code", {
+    method: "POST",
+    body: { code },
   });
 }
 

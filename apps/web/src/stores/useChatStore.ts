@@ -4,7 +4,9 @@ import { apiFetch } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { avatarColorFor } from "@/lib/avatarColor";
 import { notifyDesktop } from "@/lib/desktop";
+import { playNotificationSound } from "@/lib/notifySound";
 import { useAuthStore } from "./useAuthStore";
+import { useSettingsStore } from "./useSettingsStore";
 
 interface ApiPublicUser {
   id: string;
@@ -85,10 +87,16 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     const isOwnMessage = message.authorId === useAuthStore.getState().user?.id;
     if (!isOwnMessage && document.hidden) {
-      notifyDesktop(
-        message.author?.displayName ?? "Nova mensagem",
-        message.content,
-      );
+      const settings = useSettingsStore.getState().settings;
+      if (settings?.desktopNotifications ?? true) {
+        notifyDesktop(
+          message.author?.displayName ?? "Nova mensagem",
+          message.content,
+        );
+      }
+      if (settings?.notificationSound ?? true) {
+        playNotificationSound();
+      }
     }
   });
 

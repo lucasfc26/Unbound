@@ -14,6 +14,7 @@ import {
 import type { Server, Socket } from 'socket.io';
 import type { UserStatus } from '@prisma/client';
 import { UsersService } from '../users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { MessagesService } from '../messages/messages.service';
 import {
   PresenceService,
@@ -56,6 +57,7 @@ export class RealtimeGateway
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly users: UsersService,
+    private readonly prisma: PrismaService,
     private readonly messages: MessagesService,
     private readonly presence: PresenceService,
     private readonly voice: VoiceService,
@@ -84,6 +86,7 @@ export class RealtimeGateway
         username: user.username,
         displayName: user.displayName,
       };
+      await client.join(this.userRoom(user.id));
 
       const { firstConnection } = await this.presence.connect(
         user.id,
@@ -300,10 +303,11 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('typing:start')
-  onTypingStart(
+  async onTypingStart(
     @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { channelId: string },
   ) {
+    if (!(await this.canShareTypingStatus(client.data.user.id))) return;
     client.to(this.room(data.channelId)).emit('typing:start', {
       channelId: data.channelId,
       userId: client.data.user.id,
@@ -312,14 +316,24 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('typing:stop')
-  onTypingStop(
+  async onTypingStop(
     @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { channelId: string },
   ) {
+    if (!(await this.canShareTypingStatus(client.data.user.id))) return;
     client.to(this.room(data.channelId)).emit('typing:stop', {
       channelId: data.channelId,
       userId: client.data.user.id,
     });
+  }
+
+  /** Privacidade > "Mostrar quando estiver digitando" — reads are unrestricted by RLS, so this needs no session context. */
+  private async canShareTypingStatus(userId: string): Promise<boolean> {
+    const settings = await this.prisma.userSettings.findUnique({
+      where: { userId },
+      select: { shareTypingStatus: true },
+    });
+    return settings?.shareTypingStatus ?? true;
   }
 
   private room(channelId: string): string {
@@ -328,6 +342,10 @@ export class RealtimeGateway
 
   private voiceRoom(channelId: string): string {
     return `voice:${channelId}`;
+  }
+
+  private userRoom(userId: string): string {
+    return `user:${userId}`;
   }
 
   /** Fire-and-forget: fetching a link preview shouldn't hold up sending/editing the message itself. */

@@ -10,6 +10,7 @@ import {
   rejectFriendRequest,
   removeFriend,
   sendFriendRequest,
+  sendFriendRequestByCode,
   type ApiFriend,
   type ApiFriendRequest,
   type ApiPublicUser,
@@ -50,6 +51,7 @@ interface FriendsState {
   isLoading: boolean;
   fetchAll: () => Promise<void>;
   sendRequest: (username: string) => Promise<void>;
+  sendRequestByCode: (code: string) => Promise<void>;
   acceptRequest: (requestId: string) => Promise<void>;
   rejectRequest: (requestId: string) => Promise<void>;
   cancelRequest: (requestId: string) => Promise<void>;
@@ -92,6 +94,16 @@ export const useFriendsStore = create<FriendsState>((set, get) => {
     }));
   });
 
+  // Someone sent us a request, or accepted one we sent — refetch rather than hand-patch
+  // local state, since either event can arrive before our own fetchAll() from the action
+  // that triggered it finishes, and a full refetch is cheap and always consistent.
+  socket.on("friend:request", () => {
+    get().fetchAll();
+  });
+  socket.on("friend:accept", () => {
+    get().fetchAll();
+  });
+
   return {
     friends: [],
     incomingRequests: [],
@@ -117,6 +129,11 @@ export const useFriendsStore = create<FriendsState>((set, get) => {
 
     sendRequest: async (username) => {
       await sendFriendRequest(username);
+      await get().fetchAll();
+    },
+
+    sendRequestByCode: async (code) => {
+      await sendFriendRequestByCode(code);
       await get().fetchAll();
     },
 

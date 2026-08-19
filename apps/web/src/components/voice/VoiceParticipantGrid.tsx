@@ -3,7 +3,15 @@ import { MonitorUp } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { useDeviceStore } from "@/stores/useDeviceStore";
 import type { User } from "@/types";
+
+function applySinkId(el: HTMLMediaElement | null, sinkId: string | null) {
+  if (!el || !sinkId || typeof el.setSinkId !== "function") return;
+  el.setSinkId(sinkId).catch(() => {
+    // device may no longer exist / browser lacks support — audio just stays on default output
+  });
+}
 
 interface Participant {
   user: User;
@@ -40,7 +48,7 @@ export function VoiceParticipantGrid({
         />
       )}
 
-      <div className="grid auto-rows-fr grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         {participants.map((participant) => (
           <ParticipantTile key={participant.user.id} {...participant} />
         ))}
@@ -95,14 +103,18 @@ function ParticipantTile({
   connectionState,
 }: Participant) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const speakerDeviceId = useDeviceStore((state) => state.speakerDeviceId);
   const hasVideo = Boolean(
     stream?.getVideoTracks().some((track) => track.enabled),
   );
 
   useEffect(() => {
-    if (videoRef.current)
-      videoRef.current.srcObject = hasVideo ? stream! : null;
-  }, [stream, hasVideo]);
+    if (videoRef.current) videoRef.current.srcObject = stream ?? null;
+  }, [stream]);
+
+  useEffect(() => {
+    if (!isLocal) applySinkId(videoRef.current, speakerDeviceId);
+  }, [isLocal, speakerDeviceId, stream]);
 
   const connecting =
     connectionState &&
@@ -112,19 +124,21 @@ function ParticipantTile({
   return (
     <div
       className={cn(
-        "relative flex flex-col items-center justify-center gap-3 overflow-hidden rounded-lg border bg-surface p-6 transition-colors duration-150",
+        "relative flex aspect-video items-center justify-center overflow-hidden rounded-lg border bg-surface transition-colors duration-150",
         speaking ? "border-success" : "border-border",
       )}
     >
-      {hasVideo ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={isLocal}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-      ) : (
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={isLocal}
+        className={cn(
+          "absolute inset-0 h-full w-full object-cover",
+          !hasVideo && "hidden",
+        )}
+      />
+      {!hasVideo && (
         <Avatar
           name={user.displayName}
           color={user.avatarColor}
@@ -133,12 +147,7 @@ function ParticipantTile({
         />
       )}
 
-      <span
-        className={cn(
-          "z-10 flex items-center gap-1.5 rounded px-2 py-0.5 text-body font-medium text-text-primary",
-          hasVideo && "bg-black/50",
-        )}
-      >
+      <span className="absolute bottom-2 left-2 z-10 flex items-center gap-1.5 rounded bg-black/50 px-2 py-0.5 text-small font-medium text-text-primary">
         {muted && <span className="text-danger">●</span>}
         {user.displayName}
         {isLocal && " (você)"}

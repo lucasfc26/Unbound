@@ -4,7 +4,12 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // The generated Client (app runtime) connects via url — the unprivileged maselview_app
+  // role, so RLS is actually enforced. `prisma migrate`/`db push` use directUrl instead
+  // when it's set — the superuser role, since migrations need DDL privileges RLS has
+  // nothing to do with.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 enum UserStatus {
@@ -34,6 +39,11 @@ enum FriendshipStatus {
   BLOCKED
 }
 
+enum FriendRequestPrivacy {
+  EVERYONE
+  NOBODY
+}
+
 model User {
   id           String     @id @default(uuid())
   username     String     @unique
@@ -42,6 +52,8 @@ model User {
   passwordHash String
   avatarUrl    String?
   status       UserStatus @default(OFFLINE)
+  // Shareable code a friend can redeem to add this user without knowing their username.
+  friendCode   String     @unique
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -56,7 +68,39 @@ model User {
   bansReceived ServerBan[] @relation("BannedUser")
   bansIssued   ServerBan[] @relation("BannedBy")
 
+  settings UserSettings?
+
   @@map("users")
+}
+
+// One row per user, holding everything editable from Settings > Perfil / Privacidade /
+// Notificações. Row-level security (see the hand-written SQL appended to this table's
+// migration) restricts inserts/updates/deletes to the owning user's own row, identified by
+// the "app.current_user_id" session variable the API sets per request — reads stay open
+// since some fields here (customStatus, friendRequestPrivacy) must be legible to OTHER
+// users' requests (profile display, friend-request gating), not just the owner.
+model UserSettings {
+  userId String @id
+
+  // Perfil
+  bio          String? @db.VarChar(190)
+  pronouns     String? @db.VarChar(40)
+  customStatus String? @db.VarChar(100)
+
+  // Privacidade
+  friendRequestPrivacy FriendRequestPrivacy @default(EVERYONE)
+  shareTypingStatus    Boolean              @default(true)
+
+  // Notificações
+  desktopNotifications Boolean @default(true)
+  notificationSound    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
 }
 
 model Server {

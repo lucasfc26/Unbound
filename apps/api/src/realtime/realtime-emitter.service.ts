@@ -17,4 +17,9 @@ export class RealtimeEmitterService {
   emit(event: string, payload: unknown): void {
     this.server?.emit(event, payload);
   }
+
+  /** Targets only the given user's socket(s) — see the `user:${id}` room joined in RealtimeGateway.handleConnection. */
+  emitToUser(userId: string, event: string, payload: unknown): void {
+    this.server?.to(`user:${userId}`).emit(event, payload);
+  }
 }

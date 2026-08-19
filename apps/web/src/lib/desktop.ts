@@ -5,25 +5,35 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 
-let permissionChecked = false;
-let permissionGranted = false;
+let tauriPermissionChecked = false;
+let tauriPermissionGranted = false;
 
-async function ensurePermission(): Promise<boolean> {
-  if (permissionChecked) return permissionGranted;
-  permissionChecked = true;
-  permissionGranted = await isPermissionGranted();
-  if (!permissionGranted) {
-    permissionGranted = (await requestPermission()) === "granted";
+async function ensureTauriPermission(): Promise<boolean> {
+  if (tauriPermissionChecked) return tauriPermissionGranted;
+  tauriPermissionChecked = true;
+  tauriPermissionGranted = await isPermissionGranted();
+  if (!tauriPermissionGranted) {
+    tauriPermissionGranted = (await requestPermission()) === "granted";
   }
-  return permissionGranted;
+  return tauriPermissionGranted;
 }
 
-/** No-op outside the Tauri desktop app — safe to call unconditionally from shared frontend code. */
+async function ensureBrowserPermission(): Promise<boolean> {
+  if (typeof Notification === "undefined") return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  const result = await Notification.requestPermission();
+  return result === "granted";
+}
+
+/** No-op if notifications aren't available or permitted — safe to call unconditionally. */
 export async function notifyDesktop(
   title: string,
   body: string,
 ): Promise<void> {
-  if (!isTauri()) return;
-  if (!(await ensurePermission())) return;
-  sendNotification({ title, body });
+  if (isTauri()) {
+    if (await ensureTauriPermission()) sendNotification({ title, body });
+    return;
+  }
+  if (await ensureBrowserPermission()) new Notification(title, { body });
 }

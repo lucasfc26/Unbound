@@ -5,35 +5,55 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import {
   toPublicUser,
   maskInvisible,
-  type PublicUser,
+  withCustomStatus,
+  type PublicUserWithProfile,
 } from '../users/user.presenter';
+import { normalizeFriendCode } from '../users/friend-code';
 import type { SendFriendRequestDto } from './dto/send-friend-request.dto';
+import type { SendFriendRequestByCodeDto } from './dto/send-friend-request-by-code.dto';
 
 export interface FriendRequestEntry {
   id: string;
-  user: PublicUser;
+  user: PublicUserWithProfile;
   createdAt: Date;
 }
 
 export interface FriendEntry {
   friendshipId: string;
-  user: PublicUser;
+  user: PublicUserWithProfile;
   since: Date;
 }
 
 @Injectable()
 export class FriendsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emitter: RealtimeEmitterService,
+  ) {}
 
   async sendRequest(userId: string, dto: SendFriendRequestDto) {
     const target = await this.prisma.user.findUnique({
       where: { username: dto.username },
     });
     if (!target) throw new NotFoundException('Usuário não encontrado');
+    return this.createRequest(userId, target);
+  }
+
+  async sendRequestByCode(userId: string, dto: SendFriendRequestByCodeDto) {
+    const target = await this.prisma.user.findUnique({
+      where: { friendCode: normalizeFriendCode(dto.code) },
+    });
+    if (!target) throw new NotFoundException('Código de amigo inválido');
+    return this.createRequest(userId, target);
+  }
+
+  private async createRequest(userId: string, target: User) {
     if (target.id === userId)
       throw new BadRequestException('Você não pode adicionar a si mesmo');
 
@@ -52,9 +72,26 @@ export class FriendsService {
       );
     }
 
-    return this.prisma.friendship.create({
-      data: { requesterId: userId, addresseeId: target.id, status: 'PENDING' },
+    const targetSettings = await this.prisma.userSettings.findUnique({
+      where: { userId: target.id },
+      select: { friendRequestPrivacy: true },
     });
+    if (targetSettings?.friendRequestPrivacy === 'NOBODY') {
+      throw new ForbiddenException(
+        'Este usuário não está aceitando solicitações de amizade no momento',
+      );
+    }
+
+    const friendship = await this.prisma.friendship.create({
+      data: { requesterId: userId, addresseeId: target.id, status: 'PENDING' },
+      include: { requester: true },
+    });
+    this.emitter.emitToUser(target.id, 'friend:request', {
+      id: friendship.id,
+      user: toPublicUser(friendship.requester),
+      createdAt: friendship.createdAt,
+    });
+    return friendship;
   }
 
   async listRequests(userId: string): Promise<{
@@ -64,12 +101,12 @@ export class FriendsService {
     const [incoming, outgoing] = await Promise.all([
       this.prisma.friendship.findMany({
         where: { addresseeId: userId, status: 'PENDING' },
-        include: { requester: true },
+        include: { requester: { include: { settings: true } } },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.friendship.findMany({
         where: { requesterId: userId, status: 'PENDING' },
-        include: { addressee: true },
+        include: { addressee: { include: { settings: true } } },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
@@ -77,23 +114,35 @@ export class FriendsService {
     return {
       incoming: incoming.map((f) => ({
         id: f.id,
-        user: maskInvisible(toPublicUser(f.requester)),
+        user: withCustomStatus(
+          maskInvisible(toPublicUser(f.requester)),
+          f.requester.settings,
+        ),
         createdAt: f.createdAt,
       })),
       outgoing: outgoing.map((f) => ({
         id: f.id,
-        user: maskInvisible(toPublicUser(f.addressee)),
+        user: withCustomStatus(
+          maskInvisible(toPublicUser(f.addressee)),
+          f.addressee.settings,
+        ),
         createdAt: f.createdAt,
       })),
     };
   }
 
   async accept(userId: string, requestId: string) {
-    await this.getPendingIncoming(userId, requestId);
-    return this.prisma.friendship.update({
+    const request = await this.getPendingIncoming(userId, requestId);
+    const updated = await this.prisma.friendship.update({
       where: { id: requestId },
       data: { status: 'ACCEPTED' },
+      include: { addressee: true },
     });
+    this.emitter.emitToUser(request.requesterId, 'friend:accept', {
+      id: updated.id,
+      user: toPublicUser(updated.addressee),
+    });
+    return updated;
   }
 
   async reject(userId: string, requestId: string): Promise<void> {
@@ -121,7 +170,10 @@ export class FriendsService {
         status: 'ACCEPTED',
         OR: [{ requesterId: userId }, { addresseeId: userId }],
       },
-      include: { requester: true, addressee: true },
+      include: {
+        requester: { include: { settings: true } },
+        addressee: { include: { settings: true } },
+      },
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -129,7 +181,10 @@ export class FriendsService {
       const friend = f.requesterId === userId ? f.addressee : f.requester;
       return {
         friendshipId: f.id,
-        user: maskInvisible(toPublicUser(friend)),
+        user: withCustomStatus(
+          maskInvisible(toPublicUser(friend)),
+          friend.settings,
+        ),
         since: f.updatedAt,
       };
     });
