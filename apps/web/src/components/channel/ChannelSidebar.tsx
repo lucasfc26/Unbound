@@ -9,6 +9,10 @@ import {
   FolderPlus,
   LogOut,
   Settings,
+  Mic,
+  MicOff,
+  VolumeX,
+  ArrowRightLeft,
 } from "lucide-react";
 import { useServerStore } from "@/stores/useServerStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
@@ -16,14 +20,17 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { cn } from "@/lib/cn";
 import { ApiError } from "@/lib/api";
+import { avatarColorFor } from "@/lib/avatarColor";
 import { UserArea } from "@/components/user/UserArea";
 import { Avatar } from "@/components/ui/Avatar";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
+import { ContextMenu } from "@/components/ui/ContextMenu";
 import { InviteModal } from "@/components/modal/InviteModal";
 import { CreateCategoryModal } from "@/components/modal/CreateCategoryModal";
 import { CreateChannelModal } from "@/components/modal/CreateChannelModal";
 import { ServerSettingsModal } from "@/components/modal/ServerSettingsModal";
-import type { Channel, ChannelType } from "@/types";
+import type { Channel, ChannelType, ServerRole } from "@/types";
+import type { VoiceRosterEntry } from "@/stores/useVoiceStore";
 
 export function ChannelSidebar() {
   const navigate = useNavigate();
@@ -45,6 +52,7 @@ export function ChannelSidebar() {
   const participantsByChannel = useVoiceStore(
     (state) => state.participantsByChannel,
   );
+  const syncRoster = useVoiceStore((state) => state.syncRoster);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
@@ -63,6 +71,7 @@ export function ChannelSidebar() {
         pushToast("error", "Não foi possível carregar os canais"),
       );
       fetchMembers(server.id).catch(() => {});
+      syncRoster();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server?.id]);
@@ -218,7 +227,7 @@ export function ChannelSidebar() {
                 key={channel.id}
                 channel={channel}
                 serverId={server.id}
-                participantIds={participantsByChannel[channel.id]}
+                participants={participantsByChannel[channel.id]}
                 speaking={
                   speakingChannelId === channel.id ? speakingUserId : null
                 }
@@ -280,7 +289,7 @@ interface CategoryGroupProps {
   title: string;
   channels: Channel[];
   serverId: string;
-  participantsByChannel: Record<string, string[]>;
+  participantsByChannel: Record<string, VoiceRosterEntry[]>;
   speakingChannelId: string | null;
   speakingUserId: string | null;
 }
@@ -317,7 +326,7 @@ function CategoryGroup({
               key={channel.id}
               channel={channel}
               serverId={serverId}
-              participantIds={participantsByChannel[channel.id]}
+              participants={participantsByChannel[channel.id]}
               speaking={
                 speakingChannelId === channel.id ? speakingUserId : null
               }
@@ -332,17 +341,43 @@ function CategoryGroup({
 interface ChannelListItemProps {
   channel: Channel;
   serverId: string;
-  participantIds?: string[];
+  participants?: VoiceRosterEntry[];
   speaking: string | null;
+}
+
+function canMuteMembers(role?: ServerRole): boolean {
+  return role === "OWNER" || role === "ADMIN" || role === "MODERATOR";
+}
+
+function canMoveMembers(role?: ServerRole): boolean {
+  return role === "OWNER" || role === "ADMIN" || role === "MODERATOR";
 }
 
 function ChannelListItem({
   channel,
   serverId,
-  participantIds,
+  participants,
   speaking,
 }: ChannelListItemProps) {
   const members = useServerStore((state) => state.membersByServer[serverId]);
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const locallyMutedUserIds = useVoiceStore(
+    (state) => state.locallyMutedUserIds,
+  );
+  const toggleLocalMute = useVoiceStore((state) => state.toggleLocalMute);
+  const toggleServerMute = useVoiceStore((state) => state.toggleServerMute);
+  const setUserVolume = useVoiceStore((state) => state.setUserVolume);
+  const volumesByUserId = useVoiceStore((state) => state.volumesByUserId);
+  const moveMember = useVoiceStore((state) => state.moveMember);
+  const allChannels = useServerStore((state) => state.channels);
+  const myRole = members?.find((member) => member.userId === currentUserId)
+    ?.role;
+  const otherVoiceChannels = allChannels.filter(
+    (item) =>
+      item.serverId === serverId &&
+      item.type === "VOICE" &&
+      item.id !== channel.id,
+  );
 
   return (
     <li>
@@ -367,24 +402,86 @@ function ChannelListItem({
         <span className="truncate">{channel.name}</span>
       </NavLink>
 
-      {channel.type === "VOICE" && (participantIds?.length ?? 0) > 0 && (
+      {channel.type === "VOICE" && (participants?.length ?? 0) > 0 && (
         <ul className="ml-6 mt-0.5 flex flex-col gap-1 border-l border-border/60 py-1 pl-3">
-          {participantIds!.map((userId) => {
-            const user = members?.find(
-              (member) => member.userId === userId,
-            )?.user;
-            if (!user) return null;
+          {participants!.map((entry) => {
+            const member = members?.find(
+              (item) => item.userId === entry.userId,
+            );
+            const displayName =
+              member?.user.displayName ?? entry.displayName ?? "Usuário";
+            const color =
+              member?.user.avatarColor ?? avatarColorFor(entry.userId);
+            const isSelf = entry.userId === currentUserId;
+            const locallyMuted = Boolean(locallyMutedUserIds[entry.userId]);
+
             return (
-              <li key={userId} className="flex items-center gap-2">
-                <Avatar
-                  name={user.displayName}
-                  color={user.avatarColor}
-                  size="sm"
-                  speaking={speaking === userId}
-                />
-                <span className="truncate text-small text-text-secondary">
-                  {user.displayName}
-                </span>
+              <li key={entry.userId}>
+                <ContextMenu
+                  disabled={isSelf}
+                  items={[
+                    {
+                      type: "slider",
+                      label: "Volume",
+                      value: volumesByUserId[entry.userId] ?? 100,
+                      min: 0,
+                      max: 300,
+                      onChange: (value) => setUserVolume(entry.userId, value),
+                    },
+                    {
+                      label: locallyMuted
+                        ? "Ouvir este usuário"
+                        : "Mutar para mim",
+                      icon: locallyMuted ? Volume2 : VolumeX,
+                      onSelect: () => toggleLocalMute(entry.userId),
+                    },
+                    {
+                      label: entry.serverMuted
+                        ? "Desmutar para todos"
+                        : "Mutar para todos",
+                      icon: entry.serverMuted ? Mic : MicOff,
+                      hidden: !canMuteMembers(myRole),
+                      variant: entry.serverMuted ? "default" : "danger",
+                      onSelect: () =>
+                        toggleServerMute(
+                          channel.id,
+                          entry.userId,
+                          !entry.serverMuted,
+                        ),
+                    },
+                    {
+                      type: "submenu",
+                      label: "Mover para",
+                      icon: ArrowRightLeft,
+                      hidden:
+                        !canMoveMembers(myRole) ||
+                        otherVoiceChannels.length === 0,
+                      items: otherVoiceChannels.map((dest) => ({
+                        label: dest.name,
+                        onSelect: () =>
+                          moveMember(channel.id, entry.userId, dest.id),
+                      })),
+                    },
+                  ]}
+                >
+                  <div className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-hover">
+                    <Avatar
+                      name={displayName}
+                      color={color}
+                      imageUrl={member?.user.avatarUrl}
+                      size="sm"
+                      speaking={speaking === entry.userId}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-small text-text-secondary">
+                      {displayName}
+                    </span>
+                    {(entry.micMuted ||
+                      entry.serverMuted ||
+                      locallyMuted) && (
+                      <MicOff className="h-3.5 w-3.5 shrink-0 text-danger" />
+                    )}
+                  </div>
+                </ContextMenu>
               </li>
             );
           })}

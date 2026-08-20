@@ -4,10 +4,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: maselview
-      POSTGRES_PASSWORD: maselview
+      POSTGRES_PASSWORD: maselviewsd213ad12adadas2534053gfdg4
       POSTGRES_DB: maselview
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,8 +17,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -37,18 +33,23 @@ services:
     env_file:
       - ./apps/api/.env
     environment:
-      # Override the host-oriented values from .env with the in-network service names.
-      # DATABASE_URL (app runtime) uses the unprivileged maselview_app role so Row-Level
-      # Security on user_settings is actually enforced; DIRECT_DATABASE_URL (migrations
-      # only) uses the superuser role, which needs DDL privileges RLS has nothing to do
-      # with — see prisma/migrations/20260819190000_app_role_least_privilege.
       DATABASE_URL: postgresql://maselview_app:maselview_app@postgres:5432/maselview
-      DIRECT_DATABASE_URL: postgresql://maselview:maselview@postgres:5432/maselview
+      DIRECT_DATABASE_URL: postgresql://maselview:maselviewsd213ad12adadas2534053gfdg4@postgres:5432/maselview
       REDIS_URL: redis://redis:6379
       PORT: 3000
-      FRONTEND_URL: http://localhost:5173
+      FRONTEND_URL: https://unbound.maselcorp.com.br
+      NODE_ENV: production
+      MEDIASOUP_ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP}
+      MEDIASOUP_MIN_PORT: 40000
+      MEDIASOUP_MAX_PORT: 40049
     ports:
-      - "3000:3000"
+      - "127.0.0.1:8083:3000"
+      # mediasoup RTP/ICE — needs to be reachable directly, it can't go through
+      # the HTTP reverse proxy in front of 8083. Bound to all interfaces on
+      # purpose (0.0.0.0), unlike the proxied port above.
+      - "40000-40049:40000-40049/udp"
+    volumes:
+      - uploads_data:/app/apps/api/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,13 +61,14 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        VITE_API_URL: http://localhost:3000
+        VITE_API_URL: https://unbound.maselcorp.com.br
     restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "127.0.0.1:8084:5173"
     depends_on:
       - backend
 
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

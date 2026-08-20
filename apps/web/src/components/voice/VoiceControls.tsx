@@ -1,48 +1,39 @@
-import { useState } from "react";
-import {
-  Mic,
-  MicOff,
-  Video,
-  VideoOff,
-  MonitorUp,
-  Headphones,
-  PhoneOff,
-} from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Video, VideoOff, MonitorUp, PhoneOff } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 import { IconButton } from "@/components/ui/IconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useVoiceStore } from "@/stores/useVoiceStore";
+import { useServerStore } from "@/stores/useServerStore";
 
-export function VoiceControls({ onLeave }: { onLeave?: () => void }) {
+export function VoiceControls() {
   const navigate = useNavigate();
-  const micEnabled = useVoiceStore((state) => state.micEnabled);
+  const { serverId } = useParams<{ serverId: string }>();
   const cameraEnabled = useVoiceStore((state) => state.cameraEnabled);
   const screenSharing = useVoiceStore((state) => state.screenSharing);
-  const toggleMic = useVoiceStore((state) => state.toggleMic);
   const toggleCamera = useVoiceStore((state) => state.toggleCamera);
   const startScreenShare = useVoiceStore((state) => state.startScreenShare);
   const stopScreenShare = useVoiceStore((state) => state.stopScreenShare);
   const leave = useVoiceStore((state) => state.leave);
-  const [deafened, setDeafened] = useState(false);
+  const channels = useServerStore((state) => state.channels);
 
   function handleLeave() {
     leave();
-    (onLeave ?? (() => navigate(-1)))();
+    const textChannel = channels.find(
+      (channel) => channel.serverId === serverId && channel.type === "TEXT",
+    );
+    if (textChannel && serverId) {
+      navigate(`/app/server/${serverId}/channel/${textChannel.id}`);
+      return;
+    }
+    if (serverId) {
+      navigate(`/app/server/${serverId}`);
+      return;
+    }
+    navigate("/app/friends");
   }
 
   return (
     <div className="flex shrink-0 items-center justify-center gap-3 border-t border-black/20 bg-bg-secondary px-4 py-4">
-      <Tooltip content={micEnabled ? "Mutar microfone" : "Ativar microfone"}>
-        <IconButton
-          aria-label={micEnabled ? "Mutar microfone" : "Ativar microfone"}
-          size="lg"
-          variant={micEnabled ? "surface" : "danger"}
-          onClick={toggleMic}
-        >
-          {micEnabled ? <Mic /> : <MicOff />}
-        </IconButton>
-      </Tooltip>
-
       <Tooltip content={cameraEnabled ? "Desativar câmera" : "Ativar câmera"}>
         <IconButton
           aria-label={cameraEnabled ? "Desativar câmera" : "Ativar câmera"}
@@ -68,17 +59,6 @@ export function VoiceControls({ onLeave }: { onLeave?: () => void }) {
           }
         >
           <MonitorUp />
-        </IconButton>
-      </Tooltip>
-
-      <Tooltip content={deafened ? "Reativar áudio" : "Silenciar tudo"}>
-        <IconButton
-          aria-label={deafened ? "Reativar áudio" : "Silenciar tudo"}
-          size="lg"
-          variant={deafened ? "danger" : "surface"}
-          onClick={() => setDeafened((v) => !v)}
-        >
-          <Headphones />
         </IconButton>
       </Tooltip>
 

@@ -1,6 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { User, UserStatus } from '@prisma/client';
+import { mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { withUserContext } from '../prisma/rls';
 import { generateFriendCode } from './friend-code';
@@ -111,6 +113,29 @@ export class UsersService {
     input: UpdateProfileInput,
   ): Promise<User> {
     return this.prisma.user.update({ where: { id: userId }, data: input });
+  }
+
+  async saveAvatar(
+    userId: string,
+    file: { buffer: Buffer; mimetype: string },
+  ): Promise<User> {
+    const allowed = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+    ]);
+    if (!allowed.has(file.mimetype)) {
+      throw new BadRequestException('Use uma imagem JPG, PNG, WEBP ou GIF');
+    }
+    const dir = join(process.cwd(), 'uploads', 'avatars');
+    mkdirSync(dir, { recursive: true });
+    const filename = `${userId}.jpg`;
+    writeFileSync(join(dir, filename), file.buffer);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: `/uploads/avatars/${filename}` },
+    });
   }
 
   async updateAccount(

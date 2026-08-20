@@ -1,10 +1,17 @@
 # Builds and runs the NestJS API. Not a hot-reload dev container — rebuild
 # with `docker compose up --build backend` after changing backend code.
-FROM node:24-alpine
+#
+# Debian-based (not alpine): mediasoup only ships prebuilt worker binaries for
+# glibc. On musl (Alpine) it falls back to compiling the worker from source on
+# every install, which is slow and needs the full Python/meson/ninja toolchain.
+FROM node:24-slim
 
-# Prisma's engine binaries need a real OpenSSL on Alpine — without it they fail
-# at runtime with an unparseable "Error load..." response, not at build time.
-RUN apk add --no-cache openssl
+# openssl for Prisma's engines; python3/build-essential as a fallback in case
+# mediasoup's prebuilt worker binary doesn't match this exact glibc/kernel and
+# it has to compile from source instead.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl python3 build-essential \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 RUN corepack enable

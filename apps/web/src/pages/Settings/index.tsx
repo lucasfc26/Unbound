@@ -19,6 +19,7 @@ import { AccountSettings } from "@/components/settings/AccountSettings";
 import { ProfileSettings } from "@/components/settings/ProfileSettings";
 import { PrivacySettings } from "@/components/settings/PrivacySettings";
 import { NotificationSettings } from "@/components/settings/NotificationSettings";
+import { ShortcutSettings } from "@/components/settings/ShortcutSettings";
 import { IconButton } from "@/components/ui/IconButton";
 import { Toaster } from "@/components/toast/Toaster";
 
@@ -105,6 +106,8 @@ function SettingsPanel({ section }: { section: SettingsSection }) {
       return <AppearanceSettings />;
     case "voice":
       return <VoiceSettings />;
+    case "shortcuts":
+      return <ShortcutSettings />;
     default:
       return (
         <div>

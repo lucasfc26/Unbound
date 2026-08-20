@@ -1,11 +1,40 @@
 import { create, type StoreApi } from "zustand";
+import { Device } from "mediasoup-client";
+import type { types as MsTypes } from "mediasoup-client";
+import type { Socket } from "socket.io-client";
 import { getSocket } from "@/lib/socket";
 import { useAuthStore } from "./useAuthStore";
 import { useToastStore } from "./useToastStore";
 import { useDeviceStore } from "./useDeviceStore";
+import { useSettingsStore } from "./useSettingsStore";
+import {
+  isVoiceCue,
+  playVoiceCue,
+  unlockVoiceAudio,
+  type VoiceCue,
+} from "@/lib/notifySound";
+import {
+  audioCaptureConstraints,
+  createVoicePipeline,
+  getVoicePipeline,
+} from "@/lib/voicePipeline";
+import { loadUserVolumes, saveUserVolumes } from "@/lib/userVolumes";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 const SPEAKING_THRESHOLD = 12;
+
+/**
+ * Screen share ("transmissão") goes through the SFU — mic/camera stay on the P2P mesh above.
+ * Uses socket.io's ack timeout so a server-side exception (which arrives as a separate
+ * 'error' event, not as the ack) actually rejects instead of hanging the caller forever.
+ */
+function emitAck<T>(
+  socket: Socket,
+  event: string,
+  payload: unknown,
+): Promise<T> {
+  return socket.timeout(8000).emitWithAck(event, payload) as Promise<T>;
+}
 
 export interface RemoteParticipant {
   userId: string;
@@ -13,13 +42,21 @@ export interface RemoteParticipant {
   stream: MediaStream | null;
   connectionState: RTCPeerConnectionState;
   micMuted: boolean;
+  serverMuted: boolean;
   screenStream: MediaStream | null;
   sharingScreen: boolean;
 }
 
+export interface VoiceRosterEntry {
+  userId: string;
+  displayName: string;
+  micMuted: boolean;
+  serverMuted: boolean;
+}
+
 interface VoiceState {
   /** Who's in which voice channel across the whole app — feeds the channel sidebar roster. */
-  participantsByChannel: Record<string, string[]>;
+  participantsByChannel: Record<string, VoiceRosterEntry[]>;
   speakingChannelId: string | null;
   speakingUserId: string | null;
 
@@ -27,28 +64,211 @@ interface VoiceState {
   isConnecting: boolean;
   localStream: MediaStream | null;
   micEnabled: boolean;
+  deafened: boolean;
+  pttHeld: boolean;
+  serverMuted: boolean;
+  locallyMutedUserIds: Record<string, true>;
+  volumesByUserId: Record<string, number>;
   cameraEnabled: boolean;
   screenSharing: boolean;
   screenStream: MediaStream | null;
   remoteParticipants: Record<string, RemoteParticipant>;
+  serverPingMs: number | null;
+  p2pPingMs: number | null;
+  pendingVoicePath: {
+    serverId: string;
+    channelId: string;
+    fromChannelId: string;
+  } | null;
 
   join: (channelId: string) => Promise<void>;
   leave: () => void;
   toggleMic: () => void;
+  toggleDeafen: () => void;
+  setPttHeld: (held: boolean) => void;
+  syncMic: () => void;
+  toggleLocalMute: (userId: string) => void;
+  setUserVolume: (userId: string, volume: number) => void;
+  toggleServerMute: (channelId: string, userId: string, muted: boolean) => void;
+  moveMember: (
+    channelId: string,
+    targetUserId: string,
+    destinationChannelId: string,
+  ) => void;
+  clearPendingVoicePath: () => void;
   toggleCamera: () => Promise<void>;
   startScreenShare: () => Promise<void>;
   stopScreenShare: () => void;
+  notifyWatching: () => void;
+  syncRoster: () => void;
 }
 
 type SetFn = StoreApi<VoiceState>["setState"];
 type GetFn = StoreApi<VoiceState>["getState"];
 
+function playLocalAndBroadcast(
+  socket: Socket,
+  get: GetFn,
+  cue: VoiceCue,
+): void {
+  playVoiceCue(cue);
+  const channelId = get().activeChannelId;
+  if (channelId) socket.emit("voice:cue", { channelId, cue });
+}
+
 const peers = new Map<string, RTCPeerConnection>();
 const pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
 const stopAnalyzers = new Map<string, () => void>();
 const primaryStreamIds = new Map<string, string>();
-const screenSenders = new Map<string, RTCRtpSender[]>();
 let joinToken = 0;
+let pingTimer: ReturnType<typeof setInterval> | null = null;
+
+// SFU (mediasoup) state for screen share. One Device/recv transport per voice
+// channel, a send transport only if this user is the one sharing.
+let sfuDevice: Device | null = null;
+let sfuDeviceChannelId: string | null = null;
+let sfuSendTransport: MsTypes.Transport | null = null;
+let sfuRecvTransport: MsTypes.Transport | null = null;
+const sfuProducers = new Map<string, MsTypes.Producer>();
+const sfuConsumers = new Map<string, { consumer: MsTypes.Consumer; userId: string }>();
+const sfuConsumedProducerIds = new Set<string>();
+let micEnabledBeforeDeafen = true;
+
+function emptyParticipant(
+  userId: string,
+  displayName: string,
+  extras?: Partial<RemoteParticipant>,
+): RemoteParticipant {
+  return {
+    userId,
+    displayName,
+    stream: null,
+    connectionState: "new",
+    micMuted: extras?.micMuted ?? false,
+    serverMuted: extras?.serverMuted ?? false,
+    screenStream: null,
+    sharingScreen: false,
+    ...extras,
+  };
+}
+
+function upsertRoster(
+  byChannel: Record<string, VoiceRosterEntry[]>,
+  channelId: string,
+  entry: VoiceRosterEntry,
+): Record<string, VoiceRosterEntry[]> {
+  const list = byChannel[channelId] ?? [];
+  const idx = list.findIndex((item) => item.userId === entry.userId);
+  const next = [...list];
+  if (idx >= 0) next[idx] = { ...next[idx], ...entry };
+  else next.push(entry);
+  return { ...byChannel, [channelId]: next };
+}
+
+function patchRoster(
+  byChannel: Record<string, VoiceRosterEntry[]>,
+  channelId: string,
+  userId: string,
+  patch: Partial<VoiceRosterEntry>,
+): Record<string, VoiceRosterEntry[]> {
+  const list = byChannel[channelId] ?? [];
+  if (!list.some((item) => item.userId === userId)) return byChannel;
+  return {
+    ...byChannel,
+    [channelId]: list.map((item) =>
+      item.userId === userId ? { ...item, ...patch } : item,
+    ),
+  };
+}
+
+function removeFromRoster(
+  byChannel: Record<string, VoiceRosterEntry[]>,
+  channelId: string,
+  userId: string,
+): Record<string, VoiceRosterEntry[]> {
+  return {
+    ...byChannel,
+    [channelId]: (byChannel[channelId] ?? []).filter(
+      (item) => item.userId !== userId,
+    ),
+  };
+}
+
+function applyRoster(
+  set: SetFn,
+  roster: { channelId: string; participants: VoiceRosterEntry[] }[],
+) {
+  if (!Array.isArray(roster)) return;
+  const next: Record<string, VoiceRosterEntry[]> = {};
+  for (const room of roster) {
+    next[room.channelId] = room.participants;
+  }
+  set({ participantsByChannel: next });
+}
+
+function setMicTracks(stream: MediaStream | null, enabled: boolean) {
+  stream?.getAudioTracks().forEach((track) => {
+    track.enabled = enabled;
+  });
+}
+
+function applyMicState(get: GetFn) {
+  const state = get();
+  const settings = useSettingsStore.getState().settings;
+  const pttOn = settings?.pushToTalkEnabled ?? false;
+  const open =
+    Boolean(state.localStream) &&
+    state.micEnabled &&
+    !state.deafened &&
+    !state.serverMuted &&
+    (!pttOn || state.pttHeld);
+  getVoicePipeline()?.setOpen(open);
+  setMicTracks(state.localStream, open);
+}
+
+function stopPingLoop() {
+  if (pingTimer) {
+    clearInterval(pingTimer);
+    pingTimer = null;
+  }
+}
+
+async function measurePing(set: SetFn) {
+  const socket = getSocket();
+  const started = Date.now();
+  try {
+    await emitAck(socket, "voice:ping", {});
+    const serverPingMs = Date.now() - started;
+    const samples: number[] = [];
+    for (const pc of peers.values()) {
+      const stats = await pc.getStats();
+      stats.forEach((report) => {
+        if (
+          report.type === "candidate-pair" &&
+          report.state === "succeeded" &&
+          typeof report.currentRoundTripTime === "number"
+        ) {
+          samples.push(report.currentRoundTripTime * 1000);
+        }
+      });
+    }
+    const p2pPingMs =
+      samples.length > 0
+        ? Math.round(samples.reduce((sum, value) => sum + value, 0) / samples.length)
+        : null;
+    set({ serverPingMs, p2pPingMs });
+  } catch {
+    set({ serverPingMs: Date.now() - started });
+  }
+}
+
+function startPingLoop(set: SetFn) {
+  stopPingLoop();
+  measurePing(set).catch(() => {});
+  pingTimer = setInterval(() => {
+    measurePing(set).catch(() => {});
+  }, 3000);
+}
 
 function closePeer(userId: string) {
   peers.get(userId)?.close();
@@ -57,7 +277,194 @@ function closePeer(userId: string) {
   stopAnalyzers.get(userId)?.();
   stopAnalyzers.delete(userId);
   primaryStreamIds.delete(userId);
-  screenSenders.delete(userId);
+}
+
+/** Drops every SFU object — the server tore down its side of these on disconnect/leave, so stale refs can't be reused. */
+function resetSfuState() {
+  sfuProducers.forEach((producer) => producer.close());
+  sfuProducers.clear();
+  sfuConsumers.forEach(({ consumer }) => consumer.close());
+  sfuConsumers.clear();
+  sfuConsumedProducerIds.clear();
+  sfuSendTransport?.close();
+  sfuSendTransport = null;
+  sfuRecvTransport?.close();
+  sfuRecvTransport = null;
+  sfuDevice = null;
+  sfuDeviceChannelId = null;
+}
+
+async function ensureSfuDevice(channelId: string): Promise<Device> {
+  if (sfuDevice && sfuDeviceChannelId === channelId) return sfuDevice;
+  const socket = getSocket();
+  const routerRtpCapabilities = await emitAck<MsTypes.RtpCapabilities>(
+    socket,
+    "sfu:get_rtp_capabilities",
+    { channelId },
+  );
+  const device = new Device();
+  await device.load({ routerRtpCapabilities });
+  sfuDevice = device;
+  sfuDeviceChannelId = channelId;
+  return device;
+}
+
+async function ensureRecvTransport(
+  channelId: string,
+): Promise<MsTypes.Transport> {
+  if (sfuRecvTransport) return sfuRecvTransport;
+  const device = await ensureSfuDevice(channelId);
+  const socket = getSocket();
+  const params = await emitAck<MsTypes.TransportOptions>(
+    socket,
+    "sfu:create_transport",
+    { channelId },
+  );
+  const transport = device.createRecvTransport(params);
+  transport.on("connect", ({ dtlsParameters }, callback, errback) => {
+    emitAck(socket, "sfu:connect_transport", {
+      transportId: transport.id,
+      dtlsParameters,
+    })
+      .then(() => callback())
+      .catch(errback);
+  });
+  transport.on("connectionstatechange", (connectionState) => {
+    if (connectionState === "failed" && sfuRecvTransport === transport) {
+      sfuRecvTransport = null;
+    }
+  });
+  sfuRecvTransport = transport;
+  return transport;
+}
+
+async function ensureSendTransport(
+  channelId: string,
+): Promise<MsTypes.Transport> {
+  if (sfuSendTransport) return sfuSendTransport;
+  const device = await ensureSfuDevice(channelId);
+  const socket = getSocket();
+  const params = await emitAck<MsTypes.TransportOptions>(
+    socket,
+    "sfu:create_transport",
+    { channelId },
+  );
+  const transport = device.createSendTransport(params);
+  transport.on("connect", ({ dtlsParameters }, callback, errback) => {
+    emitAck(socket, "sfu:connect_transport", {
+      transportId: transport.id,
+      dtlsParameters,
+    })
+      .then(() => callback())
+      .catch(errback);
+  });
+  transport.on("produce", ({ kind, rtpParameters }, callback, errback) => {
+    emitAck<{ id: string }>(socket, "sfu:produce", {
+      channelId,
+      transportId: transport.id,
+      kind,
+      rtpParameters,
+    })
+      .then(callback)
+      .catch(errback);
+  });
+  sfuSendTransport = transport;
+  return transport;
+}
+
+/** Consumes a remote screen-share producer and folds its track into that participant's screenStream. */
+async function consumeProducer(
+  channelId: string,
+  producerId: string,
+  userId: string,
+  set: SetFn,
+) {
+  if (sfuConsumedProducerIds.has(producerId)) return;
+  sfuConsumedProducerIds.add(producerId);
+
+  try {
+    const device = await ensureSfuDevice(channelId);
+    const transport = await ensureRecvTransport(channelId);
+    const socket = getSocket();
+    const params = await emitAck<{
+      id: string;
+      producerId: string;
+      producerUserId: string;
+      kind: MsTypes.MediaKind;
+      rtpParameters: MsTypes.RtpParameters;
+    }>(socket, "sfu:consume", {
+      transportId: transport.id,
+      producerId,
+      rtpCapabilities: device.recvRtpCapabilities,
+    });
+
+    const consumer = await transport.consume({
+      id: params.id,
+      producerId: params.producerId,
+      kind: params.kind,
+      rtpParameters: params.rtpParameters,
+    });
+    sfuConsumers.set(consumer.id, { consumer, userId });
+    socket.emit("sfu:resume_consumer", { consumerId: consumer.id });
+
+    set((state) => {
+      const existing = state.remoteParticipants[userId];
+      if (!existing) return state;
+      const stream = existing.screenStream ?? new MediaStream();
+      stream.addTrack(consumer.track);
+      return {
+        remoteParticipants: {
+          ...state.remoteParticipants,
+          [userId]: {
+            ...existing,
+            screenStream: stream,
+            sharingScreen: true,
+          },
+        },
+      };
+    });
+  } catch {
+    sfuConsumedProducerIds.delete(producerId);
+  }
+}
+
+/** Fetches screen shares already live in the channel so a viewer who joins mid-broadcast catches up. */
+async function catchUpOnScreenShares(channelId: string, set: SetFn) {
+  const socket = getSocket();
+  const producers = await emitAck<
+    { producerId: string; userId: string; kind: MsTypes.MediaKind }[]
+  >(socket, "sfu:list_producers", { channelId });
+  for (const producer of producers) {
+    consumeProducer(channelId, producer.producerId, producer.userId, set);
+  }
+}
+
+function onSfuProducerClosed(userId: string, producerId: string, set: SetFn) {
+  for (const [id, entry] of sfuConsumers) {
+    if (entry.consumer.producerId === producerId) {
+      entry.consumer.close();
+      sfuConsumers.delete(id);
+    }
+  }
+  sfuConsumedProducerIds.delete(producerId);
+
+  const stillSharing = [...sfuConsumers.values()].some(
+    (entry) => entry.userId === userId,
+  );
+  set((state) => {
+    const existing = state.remoteParticipants[userId];
+    if (!existing) return state;
+    return {
+      remoteParticipants: {
+        ...state.remoteParticipants,
+        [userId]: {
+          ...existing,
+          sharingScreen: stillSharing,
+          screenStream: stillSharing ? existing.screenStream : null,
+        },
+      },
+    };
+  });
 }
 
 function watchSpeaking(
@@ -184,17 +591,51 @@ async function flushPendingCandidates(userId: string, pc: RTCPeerConnection) {
   }
 }
 
-async function performRealJoin(channelId: string, set: SetFn, get: GetFn) {
+async function performRealJoin(
+  channelId: string,
+  set: SetFn,
+  get: GetFn,
+  options?: { reuseStream?: boolean },
+) {
   const myToken = ++joinToken;
   set({ isConnecting: true });
+  Array.from(peers.keys()).forEach(closePeer);
+
+  resetSfuState();
+  const me = useAuthStore.getState().user;
+  const previous = get();
+  const wantMic = previous.micEnabled && !previous.deafened;
+  const settings = useSettingsStore.getState().settings;
+  const noiseMode = settings?.noiseSuppressionMode ?? "auto";
+  const pttOn = settings?.pushToTalkEnabled ?? false;
 
   let stream: MediaStream;
+  const existing = get().localStream;
+  const canReuse =
+    options?.reuseStream &&
+    existing?.getAudioTracks().some((track) => track.readyState === "live");
   try {
-    const { micDeviceId } = useDeviceStore.getState();
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
-      video: false,
-    });
+    if (canReuse && existing) {
+      stream = existing;
+    } else {
+      const { micDeviceId } = useDeviceStore.getState();
+      const raw = await navigator.mediaDevices.getUserMedia({
+        audio: audioCaptureConstraints(micDeviceId, noiseMode),
+        video: false,
+      });
+      await unlockVoiceAudio();
+      if (myToken !== joinToken) {
+        raw.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const pipeline = createVoicePipeline(raw, {
+        micGain: settings?.micGain ?? 100,
+        noiseMode,
+        noiseGate: settings?.noiseGate ?? 40,
+        open: wantMic && !pttOn,
+      });
+      stream = pipeline.outputStream;
+    }
   } catch {
     if (myToken === joinToken) set({ isConnecting: false });
     useToastStore
@@ -203,37 +644,63 @@ async function performRealJoin(channelId: string, set: SetFn, get: GetFn) {
     return;
   }
   if (myToken !== joinToken) {
-    stream.getTracks().forEach((track) => track.stop());
+    if (!canReuse) getVoicePipeline()?.dispose();
     return;
   }
 
-  const me = useAuthStore.getState().user;
   set({
     activeChannelId: channelId,
     localStream: stream,
-    micEnabled: true,
+    micEnabled: wantMic,
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
     remoteParticipants: {},
+    serverMuted: false,
   });
+  applyMicState(get);
   if (me) watchSpeaking("local", me.id, channelId, stream, set, get);
 
   const socket = getSocket();
   const ack = await new Promise<{
-    participants: { userId: string; displayName: string }[];
+    participants: {
+      userId: string;
+      displayName: string;
+      micMuted?: boolean;
+      serverMuted?: boolean;
+    }[];
+    serverMuted?: boolean;
   }>((resolve) => socket.emit("voice:join", { channelId }, resolve));
   if (myToken !== joinToken) return;
 
+  if (ack.serverMuted) {
+    set({ serverMuted: true, micEnabled: false });
+    applyMicState(get);
+  } else if (!wantMic || pttOn) {
+    socket.emit("voice:mic_state", { channelId, muted: true });
+  }
+
   set((state) => {
-    const myId = me?.id;
-    const list = state.participantsByChannel[channelId] ?? [];
+    let roster = { ...state.participantsByChannel };
+    for (const participant of ack.participants) {
+      roster = upsertRoster(roster, channelId, {
+        userId: participant.userId,
+        displayName: participant.displayName,
+        micMuted: participant.micMuted ?? false,
+        serverMuted: participant.serverMuted ?? false,
+      });
+    }
+    if (me) {
+      roster = upsertRoster(roster, channelId, {
+        userId: me.id,
+        displayName: me.displayName,
+        micMuted: !get().micEnabled,
+        serverMuted: ack.serverMuted ?? false,
+      });
+    }
     return {
       isConnecting: false,
-      participantsByChannel: {
-        ...state.participantsByChannel,
-        [channelId]: myId && !list.includes(myId) ? [...list, myId] : list,
-      },
+      participantsByChannel: roster,
     };
   });
 
@@ -241,19 +708,22 @@ async function performRealJoin(channelId: string, set: SetFn, get: GetFn) {
     set((state) => ({
       remoteParticipants: {
         ...state.remoteParticipants,
-        [participant.userId]: {
-          userId: participant.userId,
-          displayName: participant.displayName,
-          stream: null,
-          connectionState: "new",
-          micMuted: false,
-          screenStream: null,
-          sharingScreen: false,
-        },
+        [participant.userId]: emptyParticipant(
+          participant.userId,
+          participant.displayName,
+          {
+            micMuted: participant.micMuted ?? false,
+            serverMuted: participant.serverMuted ?? false,
+          },
+        ),
       },
     }));
     createPeerConnection(participant.userId, channelId, stream, set, get);
   }
+
+  catchUpOnScreenShares(channelId, set).catch(() => {});
+  startPingLoop(set);
+  if (!options?.reuseStream) playVoiceCue("join");
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => {
@@ -265,40 +735,48 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       channelId,
       userId,
       displayName,
+      micMuted,
+      serverMuted,
     }: {
       channelId: string;
       userId: string;
       displayName: string;
+      micMuted?: boolean;
+      serverMuted?: boolean;
     }) => {
-      set((state) => {
-        const list = state.participantsByChannel[channelId] ?? [];
-        if (list.includes(userId)) return state;
-        return {
-          participantsByChannel: {
-            ...state.participantsByChannel,
-            [channelId]: [...list, userId],
+      set((state) => ({
+        participantsByChannel: upsertRoster(
+          state.participantsByChannel,
+          channelId,
+          {
+            userId,
+            displayName,
+            micMuted: micMuted ?? false,
+            serverMuted: serverMuted ?? false,
           },
-        };
-      });
+        ),
+      }));
 
       const state = get();
+      const me = useAuthStore.getState().user?.id;
       if (
         state.activeChannelId === channelId &&
-        userId !== useAuthStore.getState().user?.id &&
+        userId !== me
+      ) {
+        playVoiceCue("join");
+      }
+      if (
+        state.activeChannelId === channelId &&
+        userId !== me &&
         !state.remoteParticipants[userId]
       ) {
         set((s) => ({
           remoteParticipants: {
             ...s.remoteParticipants,
-            [userId]: {
-              userId,
-              displayName,
-              stream: null,
-              connectionState: "new",
-              micMuted: false,
-              screenStream: null,
-              sharingScreen: false,
-            },
+            [userId]: emptyParticipant(userId, displayName, {
+              micMuted: micMuted ?? false,
+              serverMuted: serverMuted ?? false,
+            }),
           },
         }));
       }
@@ -309,15 +787,20 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     "voice:leave",
     ({ channelId, userId }: { channelId: string; userId: string }) => {
       set((state) => ({
-        participantsByChannel: {
-          ...state.participantsByChannel,
-          [channelId]: (state.participantsByChannel[channelId] ?? []).filter(
-            (id) => id !== userId,
-          ),
-        },
+        participantsByChannel: removeFromRoster(
+          state.participantsByChannel,
+          channelId,
+          userId,
+        ),
       }));
 
       const state = get();
+      if (
+        state.activeChannelId === channelId &&
+        userId !== useAuthStore.getState().user?.id
+      ) {
+        playVoiceCue("leave");
+      }
       if (
         state.activeChannelId === channelId &&
         state.remoteParticipants[userId]
@@ -364,15 +847,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           set((s) => ({
             remoteParticipants: {
               ...s.remoteParticipants,
-              [fromUserId]: s.remoteParticipants[fromUserId] ?? {
-                userId: fromUserId,
-                displayName: "Usuário",
-                stream: null,
-                connectionState: "new",
-                micMuted: false,
-                screenStream: null,
-                sharingScreen: false,
-              },
+              [fromUserId]: s.remoteParticipants[fromUserId] ??
+                emptyParticipant(fromUserId, "Usuário"),
             },
           }));
         }
@@ -419,52 +895,169 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       userId: string;
       muted: boolean;
     }) => {
-      const state = get();
-      if (state.activeChannelId !== channelId) return;
       set((s) => {
         const existing = s.remoteParticipants[userId];
-        if (!existing) return s;
         return {
-          remoteParticipants: {
-            ...s.remoteParticipants,
-            [userId]: { ...existing, micMuted: muted },
-          },
+          participantsByChannel: patchRoster(
+            s.participantsByChannel,
+            channelId,
+            userId,
+            { micMuted: muted },
+          ),
+          remoteParticipants: existing
+            ? {
+                ...s.remoteParticipants,
+                [userId]: { ...existing, micMuted: muted },
+              }
+            : s.remoteParticipants,
         };
       });
+      const me = useAuthStore.getState().user?.id;
+      const current = get();
+      if (
+        current.activeChannelId === channelId &&
+        userId !== me &&
+        !current.remoteParticipants[userId]?.serverMuted
+      ) {
+        playVoiceCue(muted ? "mute" : "unmute");
+      }
     },
   );
 
   socket.on(
-    "voice:screen_share",
+    "voice:server_mute",
     ({
       channelId,
       userId,
-      sharing,
+      muted,
     }: {
       channelId: string;
       userId: string;
-      sharing: boolean;
+      muted: boolean;
     }) => {
-      const state = get();
-      if (state.activeChannelId !== channelId) return;
+      const me = useAuthStore.getState().user;
+      if (me?.id === userId) {
+        if (muted) {
+          set({ serverMuted: true, micEnabled: false });
+          applyMicState(get);
+        } else {
+          set({ serverMuted: false });
+          applyMicState(get);
+        }
+      }
       set((s) => {
         const existing = s.remoteParticipants[userId];
-        if (!existing) return s;
         return {
-          remoteParticipants: {
-            ...s.remoteParticipants,
-            [userId]: {
-              ...existing,
-              sharingScreen: sharing,
-              screenStream: sharing ? existing.screenStream : null,
-            },
-          },
+          participantsByChannel: patchRoster(
+            s.participantsByChannel,
+            channelId,
+            userId,
+            muted ? { serverMuted: true, micMuted: true } : { serverMuted: false },
+          ),
+          remoteParticipants: existing
+            ? {
+                ...s.remoteParticipants,
+                [userId]: {
+                  ...existing,
+                  serverMuted: muted,
+                  micMuted: muted ? true : existing.micMuted,
+                },
+              }
+            : s.remoteParticipants,
         };
       });
+      if (get().activeChannelId === channelId) {
+        playVoiceCue(muted ? "mute" : "unmute");
+      }
+    },
+  );
+
+  socket.on(
+    "voice:moved",
+    ({
+      fromChannelId,
+      toChannelId,
+      serverId,
+    }: {
+      fromChannelId: string;
+      toChannelId: string;
+      serverId: string;
+    }) => {
+      playVoiceCue("move");
+      get().stopScreenShare();
+      set({
+        pendingVoicePath: {
+          serverId,
+          channelId: toChannelId,
+          fromChannelId,
+        },
+      });
+      Array.from(peers.keys()).forEach(closePeer);
+      resetSfuState();
+      performRealJoin(toChannelId, set, get, { reuseStream: true }).catch(
+        () => {},
+      );
+    },
+  );
+
+  socket.on(
+    "sfu:new_producer",
+    ({
+      channelId,
+      producerId,
+      userId,
+      kind,
+    }: {
+      channelId: string;
+      producerId: string;
+      userId: string;
+      kind: MsTypes.MediaKind;
+    }) => {
+      const state = get();
+      if (
+        state.activeChannelId !== channelId ||
+        userId === useAuthStore.getState().user?.id
+      ) {
+        return;
+      }
+      consumeProducer(channelId, producerId, userId, set).catch(() => {});
+      if (kind === "video") playVoiceCue("stream");
+    },
+  );
+
+  socket.on(
+    "voice:cue",
+    ({ channelId, cue }: { channelId: string; cue: string }) => {
+      if (get().activeChannelId !== channelId || !isVoiceCue(cue)) return;
+      playVoiceCue(cue);
+    },
+  );
+
+  socket.on(
+    "sfu:producer_closed",
+    ({
+      channelId,
+      userId,
+      producerId,
+    }: {
+      channelId: string;
+      userId: string;
+      producerId: string;
+    }) => {
+      if (get().activeChannelId !== channelId) return;
+      onSfuProducerClosed(userId, producerId, set);
     },
   );
 
   socket.on("connect", () => {
+    socket.emit(
+      "voice:sync",
+      {},
+      (roster: { channelId: string; participants: VoiceRosterEntry[] }[]) => {
+        applyRoster(set, roster);
+      },
+    );
+
     const state = get();
     if (state.activeChannelId) {
       Array.from(peers.keys()).forEach(closePeer);
@@ -482,13 +1075,23 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     isConnecting: false,
     localStream: null,
     micEnabled: true,
+    deafened: false,
+    pttHeld: false,
+    serverMuted: false,
+    locallyMutedUserIds: {},
+    volumesByUserId: loadUserVolumes(),
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
     remoteParticipants: {},
+    serverPingMs: null,
+    p2pPingMs: null,
+    pendingVoicePath: null,
 
     join: async (channelId) => {
+      void unlockVoiceAudio();
       const current = get().activeChannelId;
+      if (current === channelId) return;
       if (current && current !== channelId) get().leave();
 
       await performRealJoin(channelId, set, get);
@@ -498,51 +1101,177 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const state = get();
       if (!state.activeChannelId) return;
       const channelId = state.activeChannelId;
+      playVoiceCue("leave");
 
       joinToken++;
+      stopPingLoop();
+      getVoicePipeline()?.dispose();
       socket.emit("voice:leave", { channelId });
       Array.from(peers.keys()).forEach(closePeer);
       stopAnalyzers.get("local")?.();
       stopAnalyzers.delete("local");
       state.localStream?.getTracks().forEach((track) => track.stop());
       state.screenStream?.getTracks().forEach((track) => track.stop());
-      screenSenders.clear();
+      resetSfuState();
 
       const myId = useAuthStore.getState().user?.id;
       set((s) => ({
         activeChannelId: null,
         localStream: null,
-        micEnabled: true,
+        isConnecting: false,
         cameraEnabled: false,
         screenSharing: false,
         screenStream: null,
+        serverMuted: false,
+        locallyMutedUserIds: {},
         remoteParticipants: {},
+        serverPingMs: null,
+        p2pPingMs: null,
+        pendingVoicePath: null,
+        pttHeld: false,
         speakingChannelId:
           s.speakingChannelId === channelId ? null : s.speakingChannelId,
         speakingUserId:
           s.speakingChannelId === channelId ? null : s.speakingUserId,
-        participantsByChannel: {
-          ...s.participantsByChannel,
-          [channelId]: (s.participantsByChannel[channelId] ?? []).filter(
-            (id) => id !== myId,
-          ),
-        },
+        participantsByChannel: myId
+          ? removeFromRoster(s.participantsByChannel, channelId, myId)
+          : s.participantsByChannel,
       }));
     },
 
     toggleMic: () => {
+      void unlockVoiceAudio();
       const state = get();
-      if (!state.localStream || !state.activeChannelId) return;
+      if (state.serverMuted) {
+        useToastStore
+          .getState()
+          .push("error", "Você foi silenciado por um administrador");
+        return;
+      }
+
+      if (state.deafened) {
+        set({ deafened: false, micEnabled: true });
+        micEnabledBeforeDeafen = true;
+        applyMicState(get);
+        playVoiceCue("unmute");
+        if (state.activeChannelId) {
+          socket.emit("voice:mic_state", {
+            channelId: state.activeChannelId,
+            muted: false,
+          });
+        }
+        return;
+      }
+
       const next = !state.micEnabled;
-      state.localStream.getAudioTracks().forEach((track) => {
-        track.enabled = next;
-      });
       set({ micEnabled: next });
+      applyMicState(get);
+      playVoiceCue(next ? "unmute" : "mute");
+      if (state.activeChannelId) {
+        socket.emit("voice:mic_state", {
+          channelId: state.activeChannelId,
+          muted: !next,
+        });
+      }
+    },
+
+    toggleDeafen: () => {
+      void unlockVoiceAudio();
+      const state = get();
+      if (state.deafened) {
+        const restoreMic = micEnabledBeforeDeafen && !state.serverMuted;
+        set({ deafened: false, micEnabled: restoreMic });
+        applyMicState(get);
+        playVoiceCue("unmute");
+        if (restoreMic && state.activeChannelId) {
+          socket.emit("voice:mic_state", {
+            channelId: state.activeChannelId,
+            muted: false,
+          });
+        }
+        return;
+      }
+
+      const wasMicOn = state.micEnabled;
+      micEnabledBeforeDeafen = state.micEnabled;
+      if (state.micEnabled && state.activeChannelId) {
+        socket.emit("voice:mic_state", {
+          channelId: state.activeChannelId,
+          muted: true,
+        });
+      }
+      set({ deafened: true, micEnabled: false });
+      applyMicState(get);
+      playVoiceCue("deafen");
+      if (!wasMicOn && state.activeChannelId) {
+        socket.emit("voice:cue", {
+          channelId: state.activeChannelId,
+          cue: "deafen",
+        });
+      }
+    },
+
+    setPttHeld: (held) => {
+      if (get().pttHeld === held) return;
+      set({ pttHeld: held });
+      applyMicState(get);
+      const state = get();
+      const pttOn =
+        useSettingsStore.getState().settings?.pushToTalkEnabled ?? false;
+      if (
+        !pttOn ||
+        !state.activeChannelId ||
+        !state.micEnabled ||
+        state.deafened ||
+        state.serverMuted
+      ) {
+        return;
+      }
       socket.emit("voice:mic_state", {
         channelId: state.activeChannelId,
-        muted: !next,
+        muted: !held,
       });
     },
+
+    syncMic: () => applyMicState(get),
+
+    toggleLocalMute: (userId) => {
+      const currentlyMuted = Boolean(get().locallyMutedUserIds[userId]);
+      playLocalAndBroadcast(socket, get, currentlyMuted ? "unmute" : "mute");
+      set((state) => {
+        const next = { ...state.locallyMutedUserIds };
+        if (next[userId]) delete next[userId];
+        else next[userId] = true;
+        return { locallyMutedUserIds: next };
+      });
+    },
+
+    setUserVolume: (userId, volume) => {
+      const clamped = Math.max(0, Math.min(300, Math.round(volume)));
+      set((state) => {
+        const volumesByUserId = { ...state.volumesByUserId, [userId]: clamped };
+        saveUserVolumes(volumesByUserId);
+        return { volumesByUserId };
+      });
+    },
+
+    toggleServerMute: (channelId, userId, muted) => {
+      socket.emit("voice:server_mute", {
+        channelId,
+        targetUserId: userId,
+        muted,
+      });
+    },
+
+    moveMember: (channelId, targetUserId, destinationChannelId) => {
+      socket.emit("voice:move", {
+        channelId,
+        targetUserId,
+        destinationChannelId,
+      });
+    },
+
+    clearPendingVoicePath: () => set({ pendingVoicePath: null }),
 
     toggleCamera: async () => {
       const state = get();
@@ -586,6 +1315,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       } catch {
         return;
       }
+      await unlockVoiceAudio();
       if (get().activeChannelId !== channelId) {
         screenStream.getTracks().forEach((track) => track.stop());
         return;
@@ -595,42 +1325,68 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         .getVideoTracks()[0]
         ?.addEventListener("ended", () => get().stopScreenShare());
 
-      peers.forEach((pc, userId) => {
-        const senders = screenStream
-          .getTracks()
-          .map((track) => pc.addTrack(track, screenStream));
-        screenSenders.set(userId, senders);
-      });
-
+      // Show the local preview right away — it doesn't depend on the SFU
+      // handshake below, only on the capture itself having succeeded.
       set({ screenStream, screenSharing: true });
-      socket.emit("voice:screen_share", { channelId, sharing: true });
+      playVoiceCue("stream");
+
+      try {
+        const transport = await ensureSendTransport(channelId);
+        // Each track is produced independently — one track failing (e.g. no
+        // system audio available) shouldn't stop the other from publishing.
+        let publishedAny = false;
+        for (const track of screenStream.getTracks()) {
+          try {
+            const producer = await transport.produce({ track });
+            sfuProducers.set(producer.id, producer);
+            publishedAny = true;
+          } catch (trackErr) {
+            console.error(
+              `[voice] falha ao publicar track de ${track.kind} do compartilhamento de tela`,
+              trackErr,
+            );
+          }
+        }
+        if (!publishedAny) {
+          throw new Error("nenhuma track publicada");
+        }
+      } catch (err) {
+        console.error("[voice] falha ao publicar compartilhamento de tela", err);
+        useToastStore
+          .getState()
+          .push(
+            "error",
+            "Sua tela está sendo exibida só para você — falha ao transmitir para os outros participantes",
+          );
+      }
     },
 
     stopScreenShare: () => {
       const state = get();
       if (!state.screenStream) return;
 
-      peers.forEach((pc, userId) => {
-        const senders = screenSenders.get(userId) ?? [];
-        senders.forEach((sender) => {
-          try {
-            pc.removeTrack(sender);
-          } catch {
-            // connection may already be closed
-          }
-        });
-        screenSenders.delete(userId);
-      });
+      sfuProducers.forEach((producer) => producer.close());
+      sfuProducers.clear();
+      if (state.activeChannelId) {
+        socket.emit("sfu:stop_producing", { channelId: state.activeChannelId });
+      }
 
       state.screenStream.getTracks().forEach((track) => track.stop());
       set({ screenStream: null, screenSharing: false });
+    },
 
-      if (state.activeChannelId) {
-        socket.emit("voice:screen_share", {
-          channelId: state.activeChannelId,
-          sharing: false,
-        });
-      }
+    notifyWatching: () => {
+      playLocalAndBroadcast(socket, get, "watch");
+    },
+
+    syncRoster: () => {
+      socket.emit(
+        "voice:sync",
+        {},
+        (roster: { channelId: string; participants: VoiceRosterEntry[] }[]) => {
+          applyRoster(set, roster);
+        },
+      );
     },
   };
 });

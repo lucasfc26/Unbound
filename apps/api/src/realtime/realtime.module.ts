@@ -5,6 +5,7 @@ import { UsersModule } from '../users/users.module';
 import { MessagesModule } from '../messages/messages.module';
 import { VoiceModule } from '../voice/voice.module';
 import { LinkPreviewModule } from '../link-preview/link-preview.module';
+import { SfuModule } from '../sfu/sfu.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { LinkPreviewModule } from '../link-preview/link-preview.module';
     MessagesModule,
     VoiceModule,
     LinkPreviewModule,
+    SfuModule,
   ],
   providers: [RealtimeGateway],
 })

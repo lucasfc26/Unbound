@@ -77,6 +77,7 @@ function MemberGroup({
               <Avatar
                 name={user.displayName}
                 color={user.avatarColor}
+                imageUrl={user.avatarUrl}
                 status={user.status}
                 size="sm"
               />

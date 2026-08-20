@@ -102,6 +102,7 @@ export function MessageList({
               <Avatar
                 name={author?.displayName ?? "Usuário"}
                 color={author?.avatarColor ?? "#6c6c74"}
+                imageUrl={author?.avatarUrl}
                 size="md"
                 className="mt-0.5"
               />

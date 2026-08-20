@@ -1,25 +1,28 @@
 import { Injectable } from '@nestjs/common';
-import type { UserSettings } from '@prisma/client';
+import { Prisma, type UserSettings } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { withUserContext } from '../prisma/rls';
 import type { UpdateSettingsDto } from './dto/update-settings.dto';
 
 const DEFAULTS = {
-  bio: null,
-  pronouns: null,
-  customStatus: null,
+  bio: null as string | null,
+  pronouns: null as string | null,
+  customStatus: null as string | null,
   friendRequestPrivacy: 'EVERYONE' as const,
   shareTypingStatus: true,
   desktopNotifications: true,
   notificationSound: true,
+  micGain: 100,
+  outputGain: 100,
+  noiseSuppressionMode: 'auto',
+  noiseGate: 40,
+  pushToTalkEnabled: false,
 };
 
-/** Turns an empty string into `null` (the "clear this field" gesture); leaves absent fields absent. */
 function normalize(
   dto: UpdateSettingsDto,
-): Partial<Pick<UserSettings, 'bio' | 'pronouns' | 'customStatus'>> &
-  Omit<UpdateSettingsDto, 'bio' | 'pronouns' | 'customStatus'> {
-  const { bio, pronouns, customStatus, ...rest } = dto;
+): Prisma.UserSettingsUncheckedUpdateInput {
+  const { bio, pronouns, customStatus, keybinds, ...rest } = dto;
   return {
     ...rest,
     ...(bio !== undefined && { bio: bio === '' ? null : bio }),
@@ -28,6 +31,9 @@ function normalize(
     }),
     ...(customStatus !== undefined && {
       customStatus: customStatus === '' ? null : customStatus,
+    }),
+    ...(keybinds !== undefined && {
+      keybinds: keybinds as Prisma.InputJsonValue,
     }),
   };
 }
@@ -56,7 +62,11 @@ export class SettingsService {
     return withUserContext(this.prisma, userId, (tx) =>
       tx.userSettings.upsert({
         where: { userId },
-        create: { userId, ...DEFAULTS, ...data },
+        create: {
+          userId,
+          ...DEFAULTS,
+          ...data,
+        } as Prisma.UserSettingsUncheckedCreateInput,
         update: data,
       }),
     );

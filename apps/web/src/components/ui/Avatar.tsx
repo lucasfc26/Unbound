@@ -1,5 +1,6 @@
 import { cn } from "@/lib/cn";
 import { initials } from "@/lib/format";
+import { resolveMediaUrl } from "@/lib/mediaUrl";
 import { StatusDot } from "./StatusDot";
 import type { UserStatus } from "@/types";
 
@@ -46,9 +47,9 @@ export function Avatar({
         )}
         style={{ backgroundColor: color }}
       >
-        {imageUrl ? (
+        {resolveMediaUrl(imageUrl) ? (
           <img
-            src={imageUrl}
+            src={resolveMediaUrl(imageUrl)!}
             alt={name}
             className="h-full w-full object-cover"
           />

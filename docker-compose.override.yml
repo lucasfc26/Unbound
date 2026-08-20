@@ -1,0 +1,16 @@
+# Local-dev overrides — docker-compose merges this automatically on top of
+# docker-compose.yml (which is the VPS production config). Don't need any
+# -f flag: `docker compose up --build` picks both files up on its own.
+services:
+  backend:
+    environment:
+      FRONTEND_URL: http://localhost:8084
+      # mediasoup needs an IP the browser can actually reach for ICE — the
+      # container's own network IP isn't it. Loopback works when both
+      # browser tabs run on this same machine.
+      MEDIASOUP_ANNOUNCED_IP: 127.0.0.1
+
+  frontend:
+    build:
+      args:
+        VITE_API_URL: http://localhost:8083

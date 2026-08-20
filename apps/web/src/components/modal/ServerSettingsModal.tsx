@@ -336,6 +336,7 @@ function MembersTab({ server }: { server: Server }) {
           <Avatar
             name={member.user.displayName}
             color={member.user.avatarColor}
+            imageUrl={member.user.avatarUrl}
             size="sm"
           />
           <div className="min-w-0 flex-1">
@@ -450,6 +451,7 @@ function BansTab({ server }: { server: Server }) {
           <Avatar
             name={ban.user.displayName}
             color={avatarColorFor(ban.user.id)}
+            imageUrl={ban.user.avatarUrl}
             size="sm"
           />
           <div className="min-w-0 flex-1">

@@ -1,11 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useToastStore } from "@/stores/useToastStore";
-import { updateProfile } from "@/lib/account";
+import { updateProfile, uploadAvatar } from "@/lib/account";
 import { ApiError } from "@/lib/api";
 
 export function ProfileSettings() {
@@ -18,6 +18,9 @@ export function ProfileSettings() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? "");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [pronouns, setPronouns] = useState("");
   const [customStatus, setCustomStatus] = useState("");
   const [bio, setBio] = useState("");
@@ -41,10 +44,17 @@ export function ProfileSettings() {
     if (saving || !user) return;
     setSaving(true);
     try {
+      if (avatarFile) {
+        const uploaded = await uploadAvatar(avatarFile);
+        updateUser(uploaded);
+        setAvatarUrl(uploaded.avatarUrl ?? "");
+        setAvatarFile(null);
+        setAvatarPreview(null);
+      }
       const [updatedUser] = await Promise.all([
         updateProfile({
           displayName: displayName.trim(),
-          avatarUrl: avatarUrl.trim(),
+          avatarUrl: avatarFile ? undefined : avatarUrl.trim(),
         }),
         updateSettings({
           pronouns: pronouns.trim(),
@@ -77,18 +87,57 @@ export function ProfileSettings() {
           <Avatar
             name={displayName || user.displayName}
             color={user.avatarColor}
-            imageUrl={avatarUrl || null}
+            imageUrl={avatarPreview || avatarUrl || null}
             size="xl"
           />
           <div className="flex-1">
-            <Input
-              label="URL do avatar"
-              placeholder="https://exemplo.com/avatar.png"
-              value={avatarUrl}
-              onChange={(event) => setAvatarUrl(event.target.value)}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                try {
+                  const prepared = await prepareAvatarFile(file);
+                  if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+                  setAvatarFile(prepared);
+                  setAvatarPreview(URL.createObjectURL(prepared));
+                } catch {
+                  pushToast("error", "Não foi possível ler essa imagem");
+                }
+              }}
             />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+              >
+                Enviar foto
+              </Button>
+              {(avatarUrl || avatarPreview) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+                    setAvatarFile(null);
+                    setAvatarPreview(null);
+                    setAvatarUrl("");
+                  }}
+                >
+                  Remover foto
+                </Button>
+              )}
+            </div>
             <p className="mt-1.5 text-caption text-text-muted">
-              Deixe em branco para usar suas iniciais.
+              JPG, PNG, WEBP ou GIF de até 2 MB. A foto é salva com as outras
+              alterações do perfil.
             </p>
           </div>
         </div>
@@ -137,4 +186,26 @@ export function ProfileSettings() {
       </form>
     </div>
   );
+}
+
+async function prepareAvatarFile(file: File): Promise<File> {
+  if (file.size > 2 * 1024 * 1024) {
+    throw new Error("too large");
+  }
+  const bitmap = await createImageBitmap(file);
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return file;
+  const scale = Math.max(size / bitmap.width, size / bitmap.height);
+  const width = bitmap.width * scale;
+  const height = bitmap.height * scale;
+  ctx.drawImage(bitmap, (size - width) / 2, (size - height) / 2, width, height);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", 0.9),
+  );
+  if (!blob) return file;
+  return new File([blob], "avatar.jpg", { type: "image/jpeg" });
 }

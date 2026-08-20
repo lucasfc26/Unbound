@@ -54,3 +54,34 @@ export async function apiFetch<T>(
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  const body = new FormData();
+  body.append("file", file);
+
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body,
+  });
+
+  if (!response.ok) {
+    const payload = await response
+      .json()
+      .catch(() => ({}) as { message?: string });
+    const message = Array.isArray(payload.message)
+      ? payload.message.join(", ")
+      : payload.message;
+    throw new ApiError(
+      response.status,
+      message ?? "Não foi possível completar a solicitação",
+    );
+  }
+
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}

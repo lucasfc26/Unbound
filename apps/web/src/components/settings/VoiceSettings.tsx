@@ -2,14 +2,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, Headphones, Video } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
+import { Toggle } from "@/components/ui/Toggle";
 import { useToastStore } from "@/stores/useToastStore";
 import { useDeviceStore } from "@/stores/useDeviceStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useVoiceStore } from "@/stores/useVoiceStore";
+import { getVoicePipeline } from "@/lib/voicePipeline";
+import { PercentSlider } from "./PercentSlider";
+import { KeybindCapture } from "./KeybindCapture";
+import type { Keybind } from "@/types";
 
 const supportsSinkId =
   typeof window !== "undefined" &&
   typeof HTMLMediaElement.prototype.setSinkId === "function";
 
 export function VoiceSettings() {
+  const settings = useSettingsStore((state) => state.settings);
+  const fetchSettings = useSettingsStore((state) => state.fetch);
+
+  useEffect(() => {
+    if (!settings) fetchSettings().catch(() => {});
+  }, [settings, fetchSettings]);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [permissionGranted, setPermissionGranted] = useState(false);
 
@@ -170,6 +183,8 @@ function MicSection({ devices }: { devices: MediaDeviceInfo[] }) {
         fallbackLabel="Microfone"
       />
 
+      <MicProcessingControls />
+
       <p className="mb-1.5 mt-4 text-caption font-semibold uppercase tracking-wide text-text-muted">
         Entrada
       </p>
@@ -274,6 +289,8 @@ function SpeakerSection({ devices }: { devices: MediaDeviceInfo[] }) {
         </p>
       )}
 
+      <OutputGainControl />
+
       <audio ref={audioRef} className="hidden" />
 
       <Button
@@ -354,5 +371,114 @@ function CameraSection({ devices }: { devices: MediaDeviceInfo[] }) {
         {testing ? "Parar teste" : "Testar câmera"}
       </Button>
     </section>
+  );
+}
+
+function useDebouncedUpdate() {
+  const update = useSettingsStore((state) => state.update);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      if (timer.current !== undefined) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (patch: Parameters<typeof update>[0]) => {
+    if (timer.current !== undefined) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      update(patch).catch(() => {});
+    }, 350);
+  };
+}
+
+function MicProcessingControls() {
+  const settings = useSettingsStore((state) => state.settings);
+  const update = useSettingsStore((state) => state.update);
+  const syncMic = useVoiceStore((state) => state.syncMic);
+  const save = useDebouncedUpdate();
+  if (!settings) return null;
+
+  const auto = settings.noiseSuppressionMode === "auto";
+
+  return (
+    <>
+      <PercentSlider
+        label="Ganho do microfone"
+        description="Amplifica o que seus amigos escutam da sua voz, de 0% a 300%."
+        value={settings.micGain}
+        onChange={(micGain) => {
+          useSettingsStore.getState().patchLocal({ micGain });
+          save({ micGain });
+        }}
+      />
+
+      <div className="mt-4 rounded-md border border-border bg-surface px-3.5">
+        <Toggle
+          label="Filtro de ruído automático"
+          description="O sistema remove ruído do microfone. Desative para ajustar o filtro manualmente."
+          checked={auto}
+          onChange={(checked) => {
+            const noiseSuppressionMode = checked ? "auto" : "manual";
+            getVoicePipeline()?.setNoise(noiseSuppressionMode, settings.noiseGate);
+            void update({ noiseSuppressionMode });
+          }}
+        />
+      </div>
+
+      {!auto && (
+        <PercentSlider
+          label="Filtro de ruído manual"
+          description="Quanto maior, mais agressivo o corte de ruído de fundo."
+          value={settings.noiseGate}
+          min={0}
+          max={100}
+          onChange={(noiseGate) => {
+            useSettingsStore.getState().patchLocal({ noiseGate });
+            save({ noiseGate });
+          }}
+        />
+      )}
+
+      <div className="mt-4 rounded-md border border-border bg-surface px-3.5">
+        <Toggle
+          label="Push to talk"
+          description="O microfone só abre enquanto você segura o atalho."
+          checked={settings.pushToTalkEnabled}
+          onChange={(checked) => {
+            void update({ pushToTalkEnabled: checked }).then(() => syncMic());
+          }}
+        />
+      </div>
+      {settings.pushToTalkEnabled && (
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <p className="text-small text-text-secondary">Tecla de push to talk</p>
+          <KeybindCapture
+            value={settings.keybinds.pushToTalk}
+            onChange={(next: Keybind | null) => {
+              void update({
+                keybinds: { ...settings.keybinds, pushToTalk: next },
+              });
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+function OutputGainControl() {
+  const settings = useSettingsStore((state) => state.settings);
+  const save = useDebouncedUpdate();
+  if (!settings) return null;
+  return (
+    <PercentSlider
+      label="Ganho do fone"
+      description="Amplifica o que você escuta dos outros, de 0% a 300%."
+      value={settings.outputGain}
+      onChange={(outputGain) => {
+        useSettingsStore.getState().patchLocal({ outputGain });
+        save({ outputGain });
+      }}
+    />
   );
 }

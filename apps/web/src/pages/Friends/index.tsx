@@ -8,6 +8,7 @@ import {
   UserMinus,
   Copy,
   RefreshCw,
+  Plus,
 } from "lucide-react";
 import {
   useFriendsStore,
@@ -24,7 +25,9 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
 import { statusLabels } from "@/lib/status";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Modal } from "@/components/modal/Modal";
 import { cn } from "@/lib/cn";
+import { FriendsSidebar } from "@/components/friends/FriendsSidebar";
 
 function formatFriendCode(code: string): string {
   return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
@@ -50,6 +53,7 @@ export default function FriendsPage() {
   const sendRequestByCode = useFriendsStore((state) => state.sendRequestByCode);
 
   const [tab, setTab] = useState<Tab>("online");
+  const [addOpen, setAddOpen] = useState(false);
   const [addMode, setAddMode] = useState<"username" | "code">("username");
   const [addUsername, setAddUsername] = useState("");
   const [addCode, setAddCode] = useState("");
@@ -79,6 +83,7 @@ export default function FriendsPage() {
         await sendRequest(username);
         pushToast("success", `Solicitação enviada para ${username}`);
         setAddUsername("");
+        setAddOpen(false);
       } catch (error) {
         pushToast(
           "error",
@@ -99,6 +104,7 @@ export default function FriendsPage() {
       await sendRequestByCode(code);
       pushToast("success", "Solicitação enviada");
       setAddCode("");
+      setAddOpen(false);
     } catch (error) {
       pushToast(
         "error",
@@ -112,7 +118,9 @@ export default function FriendsPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-bg-primary">
+    <div className="flex flex-1 overflow-hidden">
+      <FriendsSidebar />
+      <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b border-black/20 px-4 shadow-sm">
         <div className="flex items-center gap-2 text-body font-semibold text-text-primary">
           <Users className="h-5 w-5 text-text-secondary" />
@@ -138,13 +146,27 @@ export default function FriendsPage() {
             </button>
           ))}
         </div>
+        <Button
+          size="sm"
+          className="ml-auto"
+          onClick={() => setAddOpen(true)}
+        >
+          <Plus className="h-4 w-4" />
+          Adicionar amigo
+        </Button>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
         {tab === "pending" ? (
           <PendingLists
             incoming={incomingRequests}
             outgoing={outgoingRequests}
+          />
+        ) : tab === "blocked" ? (
+          <EmptyState
+            icon={Users}
+            title="Nenhum usuário bloqueado"
+            description="Você ainda não bloqueou ninguém."
           />
         ) : (
           <FriendListView
@@ -152,23 +174,22 @@ export default function FriendsPage() {
             emptyLabel={tab === "online" ? "online" : "cadastrado"}
           />
         )}
+      </div>
 
-        {tab === "blocked" && (
-          <EmptyState
-            icon={Users}
-            title="Nenhum usuário bloqueado"
-            description="Você ainda não bloqueou ninguém."
-          />
-        )}
-
-        <div className="mt-8 flex max-w-md flex-col gap-4">
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="Adicionar amigo"
+        description="Envie um pedido pelo nome de usuário ou compartilhe seu código."
+        size="md"
+      >
+        <div className="flex flex-col gap-4">
           <FriendCodeCard />
-
-          <div className="rounded-lg border border-border bg-surface p-4">
-            <h2 className="mb-1 flex items-center gap-2 text-small font-semibold text-text-primary">
+          <div>
+            <h3 className="mb-1 flex items-center gap-2 text-small font-semibold text-text-primary">
               <UserPlus className="h-4 w-4" />
-              Adicionar amigo
-            </h2>
+              Enviar solicitação
+            </h3>
             <div className="mb-3 flex items-center gap-1">
               {(["username", "code"] as const).map((mode) => (
                 <button
@@ -206,6 +227,7 @@ export default function FriendsPage() {
             </form>
           </div>
         </div>
+      </Modal>
       </div>
     </div>
   );
@@ -337,6 +359,7 @@ function FriendListView({
           <Avatar
             name={entry.user.displayName}
             color={entry.user.avatarColor}
+            imageUrl={entry.user.avatarUrl}
             status={entry.user.status}
           />
           <div className="min-w-0 flex-1">
@@ -447,6 +470,7 @@ function PendingLists({
                 <Avatar
                   name={request.user.displayName}
                   color={request.user.avatarColor}
+                  imageUrl={request.user.avatarUrl}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-body font-medium text-text-primary">
@@ -492,6 +516,7 @@ function PendingLists({
                 <Avatar
                   name={request.user.displayName}
                   color={request.user.avatarColor}
+                  imageUrl={request.user.avatarUrl}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-body font-medium text-text-primary">

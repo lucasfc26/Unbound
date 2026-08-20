@@ -1,18 +1,24 @@
-import { useEffect } from "react";
-import { useParams } from "react-router-dom";
-import { Volume2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { MessageSquare, Volume2 } from "lucide-react";
 import { useServerStore } from "@/stores/useServerStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { avatarColorFor } from "@/lib/avatarColor";
 import { ChannelSidebar } from "@/components/channel/ChannelSidebar";
-import {
-  VoiceParticipantGrid,
-  type ScreenShareInfo,
-} from "@/components/voice/VoiceParticipantGrid";
+import { VoiceParticipantGrid } from "@/components/voice/VoiceParticipantGrid";
 import { VoiceControls } from "@/components/voice/VoiceControls";
+import { VoiceChatPanel } from "@/components/voice/VoiceChatPanel";
+import { IconButton } from "@/components/ui/IconButton";
+import { Tooltip } from "@/components/ui/Tooltip";
+
+function formatPing(ms: number | null): string {
+  if (ms == null) return "—";
+  return `${Math.max(0, Math.round(ms))} ms`;
+}
 
 export default function VoicePage() {
+  const navigate = useNavigate();
   const { serverId, channelId } = useParams<{
     serverId: string;
     channelId: string;
@@ -28,10 +34,10 @@ export default function VoicePage() {
 
   const currentUser = useAuthStore((state) => state.user);
   const join = useVoiceStore((state) => state.join);
-  const leave = useVoiceStore((state) => state.leave);
   const isConnecting = useVoiceStore((state) => state.isConnecting);
   const localStream = useVoiceStore((state) => state.localStream);
   const micEnabled = useVoiceStore((state) => state.micEnabled);
+  const serverMuted = useVoiceStore((state) => state.serverMuted);
   const cameraEnabled = useVoiceStore((state) => state.cameraEnabled);
   const screenSharing = useVoiceStore((state) => state.screenSharing);
   const screenStream = useVoiceStore((state) => state.screenStream);
@@ -39,13 +45,34 @@ export default function VoicePage() {
   const remoteParticipants = useVoiceStore((state) => state.remoteParticipants);
   const speakingChannelId = useVoiceStore((state) => state.speakingChannelId);
   const speakingUserId = useVoiceStore((state) => state.speakingUserId);
+  const serverPingMs = useVoiceStore((state) => state.serverPingMs);
+  const p2pPingMs = useVoiceStore((state) => state.p2pPingMs);
+  const pendingVoicePath = useVoiceStore((state) => state.pendingVoicePath);
+  const clearPendingVoicePath = useVoiceStore(
+    (state) => state.clearPendingVoicePath,
+  );
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     if (!channelId) return;
     join(channelId);
-    return () => leave();
+    // Stay in the call when navigating away — leave() only runs from the hang-up control.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
+
+  useEffect(() => {
+    if (!pendingVoicePath) return;
+    if (pendingVoicePath.channelId === channelId) {
+      clearPendingVoicePath();
+      return;
+    }
+    if (pendingVoicePath.fromChannelId === channelId) {
+      navigate(
+        `/app/server/${pendingVoicePath.serverId}/voice/${pendingVoicePath.channelId}`,
+      );
+    }
+    clearPendingVoicePath();
+  }, [pendingVoicePath, channelId, navigate, clearPendingVoicePath]);
 
   if (!server || !channel) {
     return (
@@ -69,10 +96,12 @@ export default function VoicePage() {
             speaking:
               speakingChannelId === channel.id &&
               speakingUserId === currentUser.id,
-            muted: !micEnabled,
+            muted: !micEnabled || serverMuted,
             stream: micEnabled || cameraEnabled ? localStream : null,
             isLocal: true,
             connectionState: "connected" as RTCPeerConnectionState,
+            sharingScreen: screenSharing,
+            screenStream: screenSharing ? screenStream : null,
           },
         ]
       : []),
@@ -89,31 +118,14 @@ export default function VoicePage() {
       speaking:
         speakingChannelId === channel.id &&
         speakingUserId === participant.userId,
-      muted: participant.micMuted,
+      muted: participant.micMuted || participant.serverMuted,
       stream: participant.stream,
       isLocal: false,
       connectionState: participant.connectionState,
+      sharingScreen: participant.sharingScreen,
+      screenStream: participant.screenStream,
     })),
   ];
-
-  const remoteSharing = Object.values(remoteParticipants).find(
-    (participant) => participant.sharingScreen && participant.screenStream,
-  );
-
-  const screenShare: ScreenShareInfo | null =
-    screenSharing && screenStream
-      ? {
-          displayName: currentUser?.displayName ?? "Você",
-          stream: screenStream,
-          isLocal: true,
-        }
-      : remoteSharing
-        ? {
-            displayName: remoteSharing.displayName,
-            stream: remoteSharing.screenStream!,
-            isLocal: false,
-          }
-        : null;
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -128,15 +140,34 @@ export default function VoicePage() {
           {isConnecting && (
             <span className="text-caption text-text-muted">Conectando...</span>
           )}
+          <span className="ml-2 text-caption text-text-muted">
+            Servidor {formatPing(serverPingMs)}
+            {p2pPingMs != null ? ` · P2P ${formatPing(p2pPingMs)}` : ""}
+          </span>
+          <div className="ml-auto">
+            <Tooltip content={chatOpen ? "Fechar chat" : "Abrir chat de texto"}>
+              <IconButton
+                aria-label={chatOpen ? "Fechar chat" : "Abrir chat de texto"}
+                size="sm"
+                variant={chatOpen ? "active" : "ghost"}
+                onClick={() => setChatOpen((value) => !value)}
+              >
+                <MessageSquare className="h-4.5 w-4.5" />
+              </IconButton>
+            </Tooltip>
+          </div>
         </header>
 
         <VoiceParticipantGrid
           participants={participants}
-          screenShare={screenShare}
           onStopScreenShare={stopScreenShare}
         />
         <VoiceControls />
       </div>
+
+      {chatOpen && (
+        <VoiceChatPanel channel={channel} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
 }

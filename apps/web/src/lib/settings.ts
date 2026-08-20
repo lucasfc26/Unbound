@@ -1,5 +1,12 @@
 import { apiFetch } from "./api";
-import type { FriendRequestPrivacy, UserSettings } from "@/types";
+import { DEFAULT_KEYBINDS } from "./keybinds";
+import type {
+  FriendRequestPrivacy,
+  Keybind,
+  KeybindAction,
+  NoiseSuppressionMode,
+  UserSettings,
+} from "@/types";
 
 export interface ApiUserSettings {
   userId: string;
@@ -10,6 +17,12 @@ export interface ApiUserSettings {
   shareTypingStatus: boolean;
   desktopNotifications: boolean;
   notificationSound: boolean;
+  micGain: number;
+  outputGain: number;
+  noiseSuppressionMode: NoiseSuppressionMode;
+  noiseGate: number;
+  pushToTalkEnabled: boolean;
+  keybinds: unknown;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,6 +35,22 @@ export interface UpdateUserSettingsInput {
   shareTypingStatus?: boolean;
   desktopNotifications?: boolean;
   notificationSound?: boolean;
+  micGain?: number;
+  outputGain?: number;
+  noiseSuppressionMode?: NoiseSuppressionMode;
+  noiseGate?: number;
+  pushToTalkEnabled?: boolean;
+  keybinds?: Partial<Record<KeybindAction, Keybind | null>>;
+}
+
+function parseKeybinds(
+  raw: unknown,
+): Partial<Record<KeybindAction, Keybind | null>> {
+  const parsed =
+    raw && typeof raw === "object"
+      ? (raw as Partial<Record<KeybindAction, Keybind | null>>)
+      : {};
+  return { ...DEFAULT_KEYBINDS, ...parsed };
 }
 
 export function toUserSettings(api: ApiUserSettings): UserSettings {
@@ -33,6 +62,13 @@ export function toUserSettings(api: ApiUserSettings): UserSettings {
     shareTypingStatus: api.shareTypingStatus,
     desktopNotifications: api.desktopNotifications,
     notificationSound: api.notificationSound,
+    micGain: api.micGain ?? 100,
+    outputGain: api.outputGain ?? 100,
+    noiseSuppressionMode:
+      api.noiseSuppressionMode === "manual" ? "manual" : "auto",
+    noiseGate: api.noiseGate ?? 40,
+    pushToTalkEnabled: Boolean(api.pushToTalkEnabled),
+    keybinds: parseKeybinds(api.keybinds),
   };
 }
 

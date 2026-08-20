@@ -19,6 +19,26 @@ export interface User {
 
 export type FriendRequestPrivacy = "EVERYONE" | "NOBODY";
 
+export type NoiseSuppressionMode = "auto" | "manual";
+
+export interface Keybind {
+  code: string;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  meta: boolean;
+}
+
+export type KeybindAction =
+  | "toggleMute"
+  | "toggleDeafen"
+  | "pushToTalk"
+  | "toggleCamera"
+  | "toggleScreenShare"
+  | "leaveCall"
+  | "openSettings"
+  | "toggleNoiseSuppression";
+
 export interface UserSettings {
   bio: string | null;
   pronouns: string | null;
@@ -27,6 +47,12 @@ export interface UserSettings {
   shareTypingStatus: boolean;
   desktopNotifications: boolean;
   notificationSound: boolean;
+  micGain: number;
+  outputGain: number;
+  noiseSuppressionMode: NoiseSuppressionMode;
+  noiseGate: number;
+  pushToTalkEnabled: boolean;
+  keybinds: Partial<Record<KeybindAction, Keybind | null>>;
 }
 
 export type ServerRole = "OWNER" | "ADMIN" | "MODERATOR" | "MEMBER";

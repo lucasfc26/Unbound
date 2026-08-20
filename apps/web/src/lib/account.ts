@@ -1,4 +1,4 @@
-import { apiFetch } from "./api";
+import { apiFetch, apiUpload } from "./api";
 import type { User, UserStatus } from "@/types";
 
 export interface ApiPrivateUser {
@@ -27,6 +27,10 @@ export function updateProfile(input: {
     method: "PATCH",
     body: input,
   });
+}
+
+export function uploadAvatar(file: File) {
+  return apiUpload<ApiPrivateUser>("/users/me/avatar", file);
 }
 
 export function updateAccount(input: {

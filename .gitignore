@@ -6,6 +6,7 @@ build/
 .env
 .env.local
 .env.*.local
+docker-compose.yml
 
 *.log
 npm-debug.log*
@@ -15,6 +16,7 @@ pnpm-debug.log*
 !.vscode/extensions.json
 .idea/
 
+uploads/
 .DS_Store
 Thumbs.db
 

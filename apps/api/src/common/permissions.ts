@@ -9,6 +9,8 @@ export enum Permission {
   CONNECT_VOICE = 'CONNECT_VOICE',
   SPEAK = 'SPEAK',
   SHARE_SCREEN = 'SHARE_SCREEN',
+  MUTE_MEMBERS = 'MUTE_MEMBERS',
+  MOVE_MEMBERS = 'MOVE_MEMBERS',
 }
 
 const ALL_PERMISSIONS = Object.values(Permission);
@@ -27,6 +29,8 @@ export const ROLE_PERMISSIONS: Record<ServerRole, Permission[]> = {
   MODERATOR: [
     Permission.MANAGE_CHANNELS,
     Permission.MANAGE_MEMBERS,
+    Permission.MUTE_MEMBERS,
+    Permission.MOVE_MEMBERS,
     ...BASE_MEMBER_PERMISSIONS,
   ],
   MEMBER: BASE_MEMBER_PERMISSIONS,

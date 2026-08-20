@@ -13,6 +13,7 @@ export function UserPopover({ user }: { user: User }) {
         <Avatar
           name={user.displayName}
           color={user.avatarColor}
+          imageUrl={user.avatarUrl}
           status={user.status}
           size="lg"
           className="-mt-7 ring-4 ring-elevated rounded-full"

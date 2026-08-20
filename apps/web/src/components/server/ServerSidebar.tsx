@@ -8,6 +8,7 @@ import { ApiError } from "@/lib/api";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { IconButton } from "@/components/ui/IconButton";
 import { CreateServerModal } from "@/components/modal/CreateServerModal";
+import { useFriendsStore } from "@/stores/useFriendsStore";
 
 export function ServerSidebar() {
   const navigate = useNavigate();
@@ -36,12 +37,13 @@ export function ServerSidebar() {
           to="/app/friends"
           className={({ isActive }) =>
             cn(
-              "flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-accent transition-all duration-150 hover:rounded-lg hover:bg-accent hover:text-white",
+              "relative flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-accent transition-all duration-150 hover:rounded-lg hover:bg-accent hover:text-white",
               isActive && "rounded-lg bg-accent text-white",
             )
           }
         >
           <Compass className="h-6 w-6" />
+          <IncomingFriendsBadge />
         </NavLink>
       </Tooltip>
 
@@ -115,6 +117,16 @@ interface ServerItemProps {
   color: string;
   active: boolean;
   onSelect: () => void;
+}
+
+function IncomingFriendsBadge() {
+  const count = useFriendsStore((state) => state.incomingRequests.length);
+  if (count === 0) return null;
+  return (
+    <span className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">
+      {count}
+    </span>
+  );
 }
 
 function ServerItem({ id, name, color, active, onSelect }: ServerItemProps) {
