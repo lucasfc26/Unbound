@@ -42,7 +42,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4MDgyNEE5QUJDQzZFOTUKUldTVmJzeXJxU1FJaU95bDhlaVdEWnFodlk4TG0wWFNjV1Bkd0dDL3dvdVU2eGZHQ3BtN29KV3YK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUwRjU5QTRBQjY0NDlFQTAKUldTZ25rUzJTcHIxNEFiNHp4bnYzRVhPQk9rWm5oclQzTDdjZEJWM3lEVjNkb2krZVRoaFpSelEK",
       "endpoints": [
         "https://unbound.maselcorp.com.br/uploads/releases/latest.json"
       ]

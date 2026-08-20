@@ -32,4 +32,5 @@ apps/web/public/downloads/*.deb
 *.tsbuildinfo
 
 privatekey.key
+privatekey.key.pub
 readme2.md
