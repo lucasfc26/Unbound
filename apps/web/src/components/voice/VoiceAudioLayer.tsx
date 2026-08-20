@@ -26,6 +26,19 @@ export function VoiceAudioLayer() {
   const outputGain = useSettingsStore(
     (state) => state.settings?.outputGain ?? 100,
   );
+  // getDisplayMedia's audio capture is a system/tab loopback — it has no
+  // concept of "this app's own remote voice audio", so anything we render
+  // to the output device while that capture is running gets picked up and
+  // re-broadcast, echoing back to the very people being captured. Muting
+  // local playback while an audio-enabled screen share is live is the only
+  // reliable way to keep their voices out of it; it costs the sharer hearing
+  // others over speakers for that stretch (headphones/normal mic input are
+  // unaffected — everyone still hears the sharer fine).
+  const sharingScreenWithAudio = useVoiceStore(
+    (state) =>
+      state.screenSharing &&
+      (state.screenStream?.getAudioTracks().length ?? 0) > 0,
+  );
 
   return (
     <div className="sr-only" aria-hidden>
@@ -36,7 +49,8 @@ export function VoiceAudioLayer() {
           muted={
             deafened ||
             Boolean(locallyMutedUserIds[participant.userId]) ||
-            participant.serverMuted
+            participant.serverMuted ||
+            sharingScreenWithAudio
           }
           volume={
             ((volumesByUserId[participant.userId] ?? 100) / 100) *

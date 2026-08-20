@@ -1494,6 +1494,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       set({ screenStream, screenSharing: true });
       playVoiceCue("stream");
 
+      if (screenStream.getAudioTracks().length > 0) {
+        // The capture is a system/tab audio loopback — it can't tell "other
+        // participants' voice" apart from anything else playing, so without
+        // this it re-broadcasts their own voice back to them. See
+        // VoiceAudioLayer's sharingScreenWithAudio.
+        useToastStore
+          .getState()
+          .push(
+            "warning",
+            "Compartilhando áudio da tela — o áudio dos outros participantes fica mudo para você enquanto isso, pra evitar retorno na transmissão",
+          );
+      }
+
       try {
         const transport = await ensureSendTransport(channelId);
         // Each track is produced independently — one track failing (e.g. no
