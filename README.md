@@ -18,11 +18,14 @@ Sobe Postgres, Redis, backend e frontend com um comando só — bom pra testar i
 
 ```bash
 cp apps/api/.env.example apps/api/.env
+cp docker-compose.override.example.yml docker-compose.override.yml
 docker compose up -d --build
 ```
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3000 (`curl http://localhost:3000/health` pra conferir)
+- Frontend: http://localhost:8084
+- Backend: http://localhost:8083 (`curl http://localhost:8083/health` pra conferir)
+
+Na VPS **não** use `docker-compose.override.yml` — o Compose junta esse arquivo sozinho e o frontend seria compilado com `localhost`. O `docker-compose.yml` do servidor já aponta a API para o domínio público.
 
 Esses containers **não têm hot-reload** — são um build de produção (`vite build` + `vite preview` pro frontend, `nest build` + `node dist/main` pro backend). Depois de alterar código, suba de novo com `docker compose up -d --build backend` (ou `frontend`) pra reconstruir só o que mudou. Pra editar código ativamente com hot-reload, use a Opção 2 abaixo.
 

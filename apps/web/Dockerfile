@@ -18,9 +18,9 @@ COPY apps/api apps/api
 RUN pnpm install --frozen-lockfile --filter @maselview/web
 
 # Vite bakes VITE_* vars into the bundle at build time, not at container
-# startup — this must point wherever the browser (on the host) can reach
-# the API, not the in-network container hostname.
-ARG VITE_API_URL=http://localhost:3000
+# startup — this must be the public URL the browser uses to reach the API
+# (e.g. https://unbound.maselcorp.com.br), never an in-network hostname.
+ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
 
 RUN pnpm --filter @maselview/web build

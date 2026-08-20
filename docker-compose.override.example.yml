@@ -1,6 +1,6 @@
-# Local-dev overrides — docker-compose merges this automatically on top of
-# docker-compose.yml (which is the VPS production config). Don't need any
-# -f flag: `docker compose up --build` picks both files up on its own.
+# Local Docker only. Copy to docker-compose.override.yml (gitignored) so
+# `docker compose up` uses localhost. Never put that filename on the VPS —
+# Compose auto-merges it and would bake localhost into the production frontend.
 services:
   backend:
     environment:

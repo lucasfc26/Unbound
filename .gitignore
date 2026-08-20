@@ -7,6 +7,7 @@ build/
 .env.local
 .env.*.local
 docker-compose.yml
+docker-compose.override.yml
 
 *.log
 npm-debug.log*
