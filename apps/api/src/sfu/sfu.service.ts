@@ -6,6 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter } from 'events';
 import * as mediasoup from 'mediasoup';
 import type { types as MediasoupTypes } from 'mediasoup';
 import { MEDIA_CODECS } from './sfu.config';
@@ -20,6 +21,14 @@ interface ProducerEntry {
   producer: MediasoupTypes.Producer;
   channelId: string;
   userId: string;
+  /** RTCHIBRIDO.mp Parte 4: how many consumers are subscribed right now. */
+  viewerCount: number;
+}
+
+export interface ViewerCountChange {
+  producerId: string;
+  ownerUserId: string;
+  viewerCount: number;
 }
 
 interface ConsumerEntry {
@@ -64,6 +73,12 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
   private readonly transports = new Map<string, TransportEntry>();
   private readonly producers = new Map<string, ProducerEntry>();
   private readonly consumers = new Map<string, ConsumerEntry>();
+  private readonly events = new EventEmitter();
+
+  /** RTCHIBRIDO.mp Parte 4 — fires whenever a producer's live viewer count changes. */
+  onViewerCountChange(listener: (change: ViewerCountChange) => void): void {
+    this.events.on('viewerCountChange', listener);
+  }
 
   constructor(private readonly config: ConfigService) {}
 
@@ -228,13 +243,65 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ id: string; channelId: string }> {
     const { transport, channelId } = this.getOwnTransport(transportId, userId);
     const producer = await transport.produce({ kind, rtpParameters });
-    this.producers.set(producer.id, { producer, channelId, userId });
+    // RTCHIBRIDO.mp Parte 4: nobody's watching yet at the moment a share
+    // starts — hold it paused (near-zero upload) until the first viewer subscribes.
+    await producer.pause();
+    this.producers.set(producer.id, {
+      producer,
+      channelId,
+      userId,
+      viewerCount: 0,
+    });
 
     producer.on('transportclose', () => {
       this.producers.delete(producer.id);
     });
 
     return { id: producer.id, channelId };
+  }
+
+  /** Producer transitioning 0→1 viewers resumes it; this is the only place that un-pauses a share. */
+  private addViewer(producerId: string): void {
+    const entry = this.producers.get(producerId);
+    if (!entry) return;
+    entry.viewerCount += 1;
+    if (entry.viewerCount === 1) {
+      entry.producer.resume().catch((err: unknown) => {
+        this.logger.warn(`failed to resume producer ${producerId}: ${err}`);
+      });
+      this.logger.log(`producer ${producerId} resumed (1 espectador)`);
+    }
+    this.events.emit('viewerCountChange', {
+      producerId,
+      ownerUserId: entry.userId,
+      viewerCount: entry.viewerCount,
+    } satisfies ViewerCountChange);
+  }
+
+  /** Producer transitioning to 0 viewers pauses it — the "otimização por número de espectadores" from RTCHIBRIDO.mp. */
+  private removeViewer(producerId: string): void {
+    const entry = this.producers.get(producerId);
+    if (!entry) return;
+    entry.viewerCount = Math.max(0, entry.viewerCount - 1);
+    if (entry.viewerCount === 0) {
+      entry.producer.pause().catch((err: unknown) => {
+        this.logger.warn(`failed to pause producer ${producerId}: ${err}`);
+      });
+      this.logger.log(`producer ${producerId} paused (0 espectadores)`);
+    }
+    this.events.emit('viewerCountChange', {
+      producerId,
+      ownerUserId: entry.userId,
+      viewerCount: entry.viewerCount,
+    } satisfies ViewerCountChange);
+  }
+
+  private closeConsumerEntry(consumerId: string): void {
+    const entry = this.consumers.get(consumerId);
+    if (!entry) return;
+    entry.consumer.close();
+    this.consumers.delete(consumerId);
+    this.removeViewer(entry.consumer.producerId);
   }
 
   /** Producers already live in this channel — used so a viewer joining mid-share can catch up. */
@@ -276,8 +343,15 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
       paused: true,
     });
     this.consumers.set(consumer.id, { consumer, channelId, userId });
+    this.addViewer(producerId);
 
-    consumer.on('transportclose', () => this.consumers.delete(consumer.id));
+    // The consumer is already gone by the time either of these fires — just
+    // drop our bookkeeping and count the viewer as gone. producerclose needs
+    // no removeViewer() call: the producer itself (and its entry) is gone.
+    consumer.on('transportclose', () => {
+      this.consumers.delete(consumer.id);
+      this.removeViewer(producerId);
+    });
     consumer.on('producerclose', () => this.consumers.delete(consumer.id));
 
     return {
@@ -299,8 +373,7 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
   closeConsumer(consumerId: string, userId: string): void {
     const entry = this.consumers.get(consumerId);
     if (!entry || entry.userId !== userId) return;
-    entry.consumer.close();
-    this.consumers.delete(consumerId);
+    this.closeConsumerEntry(consumerId);
   }
 
   /** Closes a user's producer(s) in a channel (screen share stopped). Returns their ids for the caller to broadcast. */
@@ -320,10 +393,9 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
   cleanupUser(channelId: string, userId: string): string[] {
     const closedProducerIds = this.closeProducers(channelId, userId);
 
-    for (const [id, entry] of this.consumers) {
+    for (const [id, entry] of [...this.consumers]) {
       if (entry.channelId === channelId && entry.userId === userId) {
-        entry.consumer.close();
-        this.consumers.delete(id);
+        this.closeConsumerEntry(id);
       }
     }
     for (const [id, entry] of this.transports) {

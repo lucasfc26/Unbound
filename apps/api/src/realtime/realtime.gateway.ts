@@ -70,6 +70,13 @@ export class RealtimeGateway
 
   afterInit(server: Server) {
     this.emitter.setServer(server);
+    // RTCHIBRIDO.mp Parte 4 — only the sharer needs to know how many people
+    // are watching (drives the "assistindo" indicator, not a room broadcast).
+    this.sfu.onViewerCountChange(({ producerId, ownerUserId, viewerCount }) => {
+      this.server
+        .to(this.userRoom(ownerUserId))
+        .emit('sfu:viewer_count', { producerId, viewerCount });
+    });
   }
 
   async handleConnection(client: Socket) {

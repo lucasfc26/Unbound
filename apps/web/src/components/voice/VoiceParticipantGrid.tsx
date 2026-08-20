@@ -133,6 +133,7 @@ function ScreenShareStage({
   onStopWatching: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const viewerCount = useVoiceStore((state) => state.screenViewerCount);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -200,6 +201,13 @@ function ScreenShareStage({
         <span className="absolute right-2 top-2 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-caption font-medium text-text-primary">
           <Server className="h-3 w-3" />
           Via servidor (SFU)
+          {isLocal && (
+            <span className="border-l border-white/20 pl-1">
+              {viewerCount === 0
+                ? "ninguém assistindo"
+                : `${viewerCount} ${viewerCount === 1 ? "pessoa assistindo" : "pessoas assistindo"}`}
+            </span>
+          )}
         </span>
       </div>
     </div>

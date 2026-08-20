@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import LandingPage from "@/pages/Landing";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import HomePage from "@/pages/Home";
@@ -34,7 +35,7 @@ export default function App() {
   return (
     <>
       <Routes>
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 

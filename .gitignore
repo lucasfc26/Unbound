@@ -21,4 +21,12 @@ uploads/
 .DS_Store
 Thumbs.db
 
+# Built desktop installers — regenerate via `pnpm desktop:build`, don't commit
+# binaries. The Dockerfile bundles whatever's in here at image build time.
+apps/web/public/downloads/*.exe
+apps/web/public/downloads/*.msi
+apps/web/public/downloads/*.dmg
+apps/web/public/downloads/*.AppImage
+apps/web/public/downloads/*.deb
+
 *.tsbuildinfo

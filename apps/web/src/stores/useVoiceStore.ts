@@ -75,6 +75,8 @@ interface VoiceState {
   cameraEnabled: boolean;
   screenSharing: boolean;
   screenStream: MediaStream | null;
+  /** How many people are actively watching your own screen share right now (RTCHIBRIDO.mp Parte 4). */
+  screenViewerCount: number;
   remoteParticipants: Record<string, RemoteParticipant>;
   serverPingMs: number | null;
   p2pPingMs: number | null;
@@ -753,6 +755,7 @@ async function performRealJoin(
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
+    screenViewerCount: 0,
     remoteParticipants: {},
     serverMuted: false,
   });
@@ -1169,6 +1172,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     },
   );
 
+  socket.on(
+    "sfu:viewer_count",
+    ({ viewerCount }: { producerId: string; viewerCount: number }) => {
+      set({ screenViewerCount: viewerCount });
+    },
+  );
+
   socket.on("connect", () => {
     socket.emit(
       "voice:sync",
@@ -1203,6 +1213,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
+    screenViewerCount: 0,
     remoteParticipants: {},
     serverPingMs: null,
     p2pPingMs: null,
@@ -1242,6 +1253,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         cameraEnabled: false,
         screenSharing: false,
         screenStream: null,
+        screenViewerCount: 0,
         serverMuted: false,
         locallyMutedUserIds: {},
         remoteParticipants: {},
@@ -1509,7 +1521,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       }
 
       state.screenStream.getTracks().forEach((track) => track.stop());
-      set({ screenStream: null, screenSharing: false });
+      set({ screenStream: null, screenSharing: false, screenViewerCount: 0 });
     },
 
     watchScreen: (userId) => {
