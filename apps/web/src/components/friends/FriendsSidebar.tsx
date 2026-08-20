@@ -5,10 +5,13 @@ import {
   useFriendsStore,
   type FriendEntry,
 } from "@/stores/useFriendsStore";
+import { useDmStore } from "@/stores/useDmStore";
 import { Avatar } from "@/components/ui/Avatar";
+import { UnreadDot } from "@/components/ui/UnreadDot";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { useFriendMenuItems } from "@/hooks/useFriendMenuItems";
 import { statusLabels } from "@/lib/status";
+import { cn } from "@/lib/cn";
 
 export function FriendsSidebar() {
   const friends = useFriendsStore((state) => state.friends);
@@ -60,6 +63,7 @@ function FriendGroup({
   entries: FriendEntry[];
 }) {
   const { itemsFor } = useFriendMenuItems();
+  const conversations = useDmStore((state) => state.conversations);
   if (entries.length === 0) return null;
   return (
     <div className="mb-3">
@@ -67,29 +71,46 @@ function FriendGroup({
         {label}
       </h3>
       <ul className="flex flex-col gap-1">
-        {entries.map((entry) => (
-          <li key={entry.user.id}>
-            <ContextMenu items={itemsFor(entry.user)}>
-              <div className="flex cursor-context-menu items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-hover">
-                <Avatar
-                  name={entry.user.displayName}
-                  color={entry.user.avatarColor}
-                  imageUrl={entry.user.avatarUrl}
-                  status={entry.user.status}
-                  size="sm"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-small font-medium text-text-primary">
-                    {entry.user.displayName}
+        {entries.map((entry) => {
+          const unread =
+            conversations.find((item) => item.user.id === entry.user.id)
+              ?.unreadCount ?? 0;
+          return (
+            <li key={entry.user.id}>
+              <ContextMenu items={itemsFor(entry.user)}>
+                <NavLink
+                  to={`/app/dm/${entry.user.id}`}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-hover",
+                      isActive && "bg-active",
+                    )
+                  }
+                >
+                  <div className="relative shrink-0">
+                    <Avatar
+                      name={entry.user.displayName}
+                      color={entry.user.avatarColor}
+                      imageUrl={entry.user.avatarUrl}
+                      status={entry.user.status}
+                      size="sm"
+                    />
+                    {unread > 0 && <UnreadDot />}
+                  </div>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-small font-medium text-text-primary">
+                      {entry.user.displayName}
+                    </span>
+                    <span className="block truncate text-caption text-text-muted">
+                      {entry.user.customStatus ??
+                        statusLabels[entry.user.status]}
+                    </span>
                   </span>
-                  <span className="block truncate text-caption text-text-muted">
-                    {entry.user.customStatus ?? statusLabels[entry.user.status]}
-                  </span>
-                </span>
-              </div>
-            </ContextMenu>
-          </li>
-        ))}
+                </NavLink>
+              </ContextMenu>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

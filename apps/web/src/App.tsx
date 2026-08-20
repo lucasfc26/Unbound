@@ -9,6 +9,7 @@ import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
 import HomePage from "@/pages/Home";
 import FriendsPage from "@/pages/Friends";
+import DmPage from "@/pages/Dm";
 import ServerPage from "@/pages/Server";
 import VoicePage from "@/pages/Voice";
 import SettingsPage from "@/pages/Settings";
@@ -85,6 +86,7 @@ export default function App() {
         >
           <Route index element={<HomePage />} />
           <Route path="friends" element={<FriendsPage />} />
+          <Route path="dm/:userId" element={<DmPage />} />
           <Route path="server/:serverId" element={<ServerPage />} />
           <Route
             path="server/:serverId/channel/:channelId"

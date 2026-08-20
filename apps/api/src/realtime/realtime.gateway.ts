@@ -542,12 +542,15 @@ export class RealtimeGateway
     @MessageBody()
     data: { channelId: string; content: string; replyToId?: string },
   ) {
-    const { message } = await this.messages.createMessage(
+    const { message, dmRecipientId } = await this.messages.createMessage(
       data.channelId,
       client.data.user.id,
       data,
     );
     this.server.to(this.room(data.channelId)).emit('message:create', message);
+    if (dmRecipientId) {
+      this.emitter.emitToUser(dmRecipientId, 'dm:message', message);
+    }
     this.attachLinkPreview(message.id, message.content, data.channelId);
   }
 

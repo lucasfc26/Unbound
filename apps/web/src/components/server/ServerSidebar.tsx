@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, useNavigate, useParams } from "react-router-dom";
+import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Plus, Compass } from "lucide-react";
 import { useServerStore } from "@/stores/useServerStore";
 import { useToastStore } from "@/stores/useToastStore";
@@ -8,11 +8,14 @@ import { ApiError } from "@/lib/api";
 import { resolveMediaUrl } from "@/lib/mediaUrl";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { IconButton } from "@/components/ui/IconButton";
+import { UnreadDot } from "@/components/ui/UnreadDot";
 import { CreateServerModal } from "@/components/modal/CreateServerModal";
 import { useFriendsStore } from "@/stores/useFriendsStore";
+import { useDmStore } from "@/stores/useDmStore";
 
 export function ServerSidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { serverId } = useParams<{ serverId: string }>();
   const servers = useServerStore((state) => state.servers);
   const channels = useServerStore((state) => state.channels);
@@ -36,14 +39,18 @@ export function ServerSidebar() {
       <Tooltip content="Início" side="right">
         <NavLink
           to="/app/friends"
-          className={({ isActive }) =>
-            cn(
+          className={() => {
+            const homeActive =
+              location.pathname.startsWith("/app/friends") ||
+              location.pathname.startsWith("/app/dm/");
+            return cn(
               "relative flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-accent transition-all duration-150 hover:rounded-lg hover:bg-accent hover:text-white",
-              isActive && "rounded-lg bg-accent text-white",
-            )
-          }
+              homeActive && "rounded-lg bg-accent text-white",
+            );
+          }}
         >
           <Compass className="h-6 w-6" />
+          <UnreadDmsBadge />
           <IncomingFriendsBadge />
         </NavLink>
       </Tooltip>
@@ -120,6 +127,14 @@ interface ServerItemProps {
   imageUrl: string | null;
   active: boolean;
   onSelect: () => void;
+}
+
+function UnreadDmsBadge() {
+  const hasUnread = useDmStore((state) =>
+    state.conversations.some((item) => item.unreadCount > 0),
+  );
+  if (!hasUnread) return null;
+  return <UnreadDot className="ring-bg-secondary" />;
 }
 
 function IncomingFriendsBadge() {

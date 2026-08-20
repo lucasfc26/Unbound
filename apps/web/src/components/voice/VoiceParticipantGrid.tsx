@@ -1,8 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { EyeOff, MonitorUp, Server, Users, X } from "lucide-react";
+import {
+  EyeOff,
+  Maximize,
+  Maximize2,
+  Minimize2,
+  MonitorUp,
+  PictureInPicture2,
+  Server,
+  Users,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/IconButton";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { useToastStore } from "@/stores/useToastStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
 import type { User } from "@/types";
 
@@ -115,6 +128,14 @@ export function VoiceParticipantGrid({
   );
 }
 
+function pipSupported(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    "pictureInPictureEnabled" in document &&
+    Boolean(document.pictureInPictureEnabled)
+  );
+}
+
 function ScreenShareStage({
   displayName,
   stream,
@@ -133,7 +154,12 @@ function ScreenShareStage({
   onStopWatching: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const viewerCount = useVoiceStore((state) => state.screenViewerCount);
+  const pushToast = useToastStore((state) => state.push);
+  const [maximized, setMaximized] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [pipActive, setPipActive] = useState(false);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -159,8 +185,85 @@ function ScreenShareStage({
     };
   }, [stream, isLocal]);
 
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const active =
+        document.fullscreenElement === stageRef.current ||
+        document.fullscreenElement === videoRef.current;
+      setFullscreen(active);
+    };
+    const onPipEnter = () => setPipActive(true);
+    const onPipLeave = () => setPipActive(false);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    const video = videoRef.current;
+    video?.addEventListener("enterpictureinpicture", onPipEnter);
+    video?.addEventListener("leavepictureinpicture", onPipLeave);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      video?.removeEventListener("enterpictureinpicture", onPipEnter);
+      video?.removeEventListener("leavepictureinpicture", onPipLeave);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!maximized || fullscreen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMaximized(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [maximized, fullscreen]);
+
+  async function togglePip() {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (document.pictureInPictureElement === video) {
+        await document.exitPictureInPicture();
+        return;
+      }
+      if (!pipSupported()) {
+        pushToast("error", "Picture-in-picture não é suportado neste navegador");
+        return;
+      }
+      await video.requestPictureInPicture();
+    } catch {
+      pushToast("error", "Não foi possível ativar o picture-in-picture");
+    }
+  }
+
+  async function toggleFullscreen() {
+    const stage = stageRef.current;
+    if (!stage) return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      await stage.requestFullscreen();
+    } catch {
+      pushToast("error", "Não foi possível entrar em tela cheia");
+    }
+  }
+
+  async function restoreNormal() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+    }
+    setMaximized(false);
+  }
+
+  const expanded = maximized || fullscreen;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-accent bg-black">
+    <div
+      ref={stageRef}
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-accent bg-black",
+        maximized &&
+          "fixed inset-0 z-[180] rounded-none border-0",
+      )}
+    >
       <div className="flex shrink-0 items-center justify-between gap-3 bg-surface px-3 py-2">
         <span className="flex min-w-0 items-center gap-1.5 text-small text-text-secondary">
           <MonitorUp className="h-4 w-4 shrink-0" />
@@ -169,14 +272,16 @@ function ScreenShareStage({
           </span>
         </span>
         <div className="flex shrink-0 items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={onToggleCards}>
-            {showCards ? (
-              <EyeOff className="h-3.5 w-3.5" />
-            ) : (
-              <Users className="h-3.5 w-3.5" />
-            )}
-            {showCards ? "Ocultar cards" : "Mostrar cards"}
-          </Button>
+          {!expanded && (
+            <Button variant="secondary" size="sm" onClick={onToggleCards}>
+              {showCards ? (
+                <EyeOff className="h-3.5 w-3.5" />
+              ) : (
+                <Users className="h-3.5 w-3.5" />
+              )}
+              {showCards ? "Ocultar cards" : "Mostrar cards"}
+            </Button>
+          )}
           {isLocal && onStopShare && (
             <Button variant="danger" size="sm" onClick={onStopShare}>
               Parar compartilhamento
@@ -188,7 +293,7 @@ function ScreenShareStage({
           </Button>
         </div>
       </div>
-      <div className="relative min-h-0 flex-1">
+      <div className="group relative min-h-0 flex-1">
         <video
           ref={videoRef}
           autoPlay
@@ -209,6 +314,57 @@ function ScreenShareStage({
             </span>
           )}
         </span>
+        <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg bg-black/70 p-1">
+          <Tooltip content={pipActive ? "Sair do picture-in-picture" : "Picture-in-picture"} side="top">
+            <IconButton
+              aria-label={pipActive ? "Sair do picture-in-picture" : "Picture-in-picture"}
+              size="sm"
+              variant={pipActive ? "active" : "ghost"}
+              className="text-white hover:bg-white/15 hover:text-white"
+              onClick={() => void togglePip()}
+            >
+              <PictureInPicture2 className="h-4 w-4" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip
+            content={maximized ? "Tela normal" : "Maximizar"}
+            side="top"
+          >
+            <IconButton
+              aria-label={maximized ? "Tela normal" : "Maximizar"}
+              size="sm"
+              variant={maximized ? "active" : "ghost"}
+              className="text-white hover:bg-white/15 hover:text-white"
+              onClick={() =>
+                maximized ? void restoreNormal() : setMaximized(true)
+              }
+            >
+              {maximized ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
+            </IconButton>
+          </Tooltip>
+          <Tooltip
+            content={fullscreen ? "Tela normal" : "Tela cheia"}
+            side="top"
+          >
+            <IconButton
+              aria-label={fullscreen ? "Tela normal" : "Tela cheia"}
+              size="sm"
+              variant={fullscreen ? "active" : "ghost"}
+              className="text-white hover:bg-white/15 hover:text-white"
+              onClick={() => void toggleFullscreen()}
+            >
+              {fullscreen ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize className="h-4 w-4" />
+              )}
+            </IconButton>
+          </Tooltip>
+        </div>
       </div>
     </div>
   );

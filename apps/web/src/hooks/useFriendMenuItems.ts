@@ -1,10 +1,12 @@
-import { UserMinus, UserPlus } from "lucide-react";
+import { UserMinus, UserPlus, MessageSquare } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useFriendsStore } from "@/stores/useFriendsStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { ApiError } from "@/lib/api";
 import type { ContextMenuEntry } from "@/components/ui/ContextMenu";
 
 export function useFriendMenuItems() {
+  const navigate = useNavigate();
   const friends = useFriendsStore((state) => state.friends);
   const outgoingRequests = useFriendsStore((state) => state.outgoingRequests);
   const incomingRequests = useFriendsStore((state) => state.incomingRequests);
@@ -63,6 +65,13 @@ export function useFriendMenuItems() {
   }): ContextMenuEntry[] {
     if (isFriend(user.id)) {
       return [
+        {
+          label: "Enviar mensagem",
+          icon: MessageSquare,
+          onSelect: () => {
+            navigate(`/app/dm/${user.id}`);
+          },
+        },
         {
           label: "Remover amigo",
           icon: UserMinus,

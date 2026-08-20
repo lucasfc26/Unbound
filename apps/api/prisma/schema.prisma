@@ -30,6 +30,7 @@ enum ServerRole {
 enum ChannelType {
   TEXT
   VOICE
+  DM
 }
 
 enum FriendshipStatus {
@@ -69,6 +70,8 @@ model User {
   bansIssued   ServerBan[] @relation("BannedBy")
 
   settings UserSettings?
+
+  channelMemberships ChannelMember[]
 
   @@map("users")
 }
@@ -179,20 +182,38 @@ model ChannelCategory {
 
 model Channel {
   id         String      @id @default(uuid())
-  serverId   String
+  serverId   String?
   categoryId String?
   name       String
   type       ChannelType @default(TEXT)
   topic      String?
   position   Int         @default(0)
+  // Canonical pair of participant ids ("low:high") so get-or-create of a DM is unique.
+  dmKey      String?     @unique
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  server   Server           @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  server   Server?          @relation(fields: [serverId], references: [id], onDelete: Cascade)
   category ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   messages Message[]
+  members  ChannelMember[]
 
   @@map("channels")
+}
+
+// Participants of a DM channel (server TEXT/VOICE channels use ServerMember instead).
+model ChannelMember {
+  id         String   @id @default(uuid())
+  channelId  String
+  userId     String
+  lastReadAt DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+  @@map("channel_members")
 }
 
 model Message {

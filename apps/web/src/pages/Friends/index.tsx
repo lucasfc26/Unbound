@@ -351,6 +351,7 @@ function FriendListView({
   friends: FriendEntry[];
   emptyLabel: string;
 }) {
+  const navigate = useNavigate();
   const removeFriend = useFriendsStore((state) => state.removeFriend);
   const pushToast = useToastStore((state) => state.push);
 
@@ -392,7 +393,8 @@ function FriendListView({
       {friends.map((entry) => (
         <li
           key={entry.friendshipId}
-          className="flex items-center gap-3 rounded-md border-b border-border/60 px-2 py-3 hover:bg-surface"
+          className="flex cursor-pointer items-center gap-3 rounded-md border-b border-border/60 px-2 py-3 hover:bg-surface"
+          onClick={() => navigate(`/app/dm/${entry.user.id}`)}
         >
           <Avatar
             name={entry.user.displayName}
@@ -411,6 +413,10 @@ function FriendListView({
           <IconButton
             aria-label={`Conversar com ${entry.user.displayName}`}
             variant="surface"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/app/dm/${entry.user.id}`);
+            }}
           >
             <MessageSquare className="h-4.5 w-4.5" />
           </IconButton>
@@ -418,7 +424,10 @@ function FriendListView({
             aria-label={`Remover ${entry.user.displayName}`}
             variant="surface"
             className="text-danger"
-            onClick={() => handleRemove(entry)}
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleRemove(entry);
+            }}
           >
             <UserMinus className="h-4.5 w-4.5" />
           </IconButton>

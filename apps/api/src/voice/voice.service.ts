@@ -52,7 +52,7 @@ export class VoiceService {
       where: { id: channelId },
     });
     if (!channel) throw new NotFoundException('Canal não encontrado');
-    if (channel.type !== 'VOICE') {
+    if (channel.type !== 'VOICE' || !channel.serverId) {
       throw new BadRequestException('Este canal não é uma sala de voz');
     }
     await this.membership.assertPermission(
@@ -68,6 +68,9 @@ export class VoiceService {
       where: { id: channelId },
     });
     if (!channel) throw new NotFoundException('Canal não encontrado');
+    if (!channel.serverId) {
+      throw new BadRequestException('Este canal não é uma sala de voz');
+    }
     await this.membership.assertPermission(
       channel.serverId,
       userId,
@@ -84,6 +87,9 @@ export class VoiceService {
       where: { id: channelId },
     });
     if (!channel) throw new NotFoundException('Canal não encontrado');
+    if (!channel.serverId) {
+      throw new BadRequestException('Este canal não é uma sala de voz');
+    }
     await this.membership.assertCanManageMember(
       channel.serverId,
       actorUserId,
@@ -101,6 +107,9 @@ export class VoiceService {
       where: { id: channelId },
     });
     if (!channel) throw new NotFoundException('Canal não encontrado');
+    if (!channel.serverId) {
+      throw new BadRequestException('Este canal não é uma sala de voz');
+    }
     await this.membership.assertCanManageMember(
       channel.serverId,
       actorUserId,

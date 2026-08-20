@@ -6,6 +6,7 @@ const TYPING_IDLE_MS = 2500;
 
 interface MessageInputProps {
   channelName: string;
+  placeholder?: string;
   onSend: (content: string) => void;
   onTypingStart?: () => void;
   onTypingStop?: () => void;
@@ -13,6 +14,7 @@ interface MessageInputProps {
 
 export function MessageInput({
   channelName,
+  placeholder,
   onSend,
   onTypingStart,
   onTypingStop,
@@ -77,7 +79,7 @@ export function MessageInput({
           ref={textareaRef}
           rows={1}
           value={value}
-          placeholder={`Escreva uma mensagem em #${channelName}...`}
+          placeholder={placeholder ?? `Escreva uma mensagem em #${channelName}...`}
           onChange={(event) => {
             setValue(event.target.value);
             event.target.style.height = "auto";

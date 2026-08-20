@@ -15,6 +15,7 @@ import { MessagesModule } from './messages/messages.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RealtimeEmitterModule } from './realtime/realtime-emitter.module';
 import { FriendsModule } from './friends/friends.module';
+import { DmsModule } from './dms/dms.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { SettingsModule } from './settings/settings.module';
 
@@ -33,6 +34,7 @@ import { SettingsModule } from './settings/settings.module';
     MessagesModule,
     RealtimeModule,
     FriendsModule,
+    DmsModule,
     InvitationsModule,
     SettingsModule,
   ],

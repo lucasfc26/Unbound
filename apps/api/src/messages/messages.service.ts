@@ -12,6 +12,13 @@ import { extractFirstUrl } from '../link-preview/link-preview.util';
 import type { CreateMessageDto } from './dto/create-message.dto';
 import type { UpdateMessageDto } from './dto/update-message.dto';
 
+function requireServerId(channel: Channel): string {
+  if (!channel.serverId) {
+    throw new ForbiddenException('Você não tem permissão para essa ação');
+  }
+  return channel.serverId;
+}
+
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 
@@ -32,12 +39,40 @@ export class MessagesService {
 
   async assertCanRead(channelId: string, userId: string): Promise<Channel> {
     const channel = await this.resolveChannel(channelId);
+    if (channel.type === 'DM') {
+      await this.assertDmMember(channelId, userId);
+      return channel;
+    }
     await this.membership.assertPermission(
-      channel.serverId,
+      requireServerId(channel),
       userId,
       Permission.READ_MESSAGES,
     );
     return channel;
+  }
+
+  async assertCanSend(channelId: string, userId: string): Promise<Channel> {
+    const channel = await this.resolveChannel(channelId);
+    if (channel.type === 'DM') {
+      await this.assertDmMember(channelId, userId);
+      return channel;
+    }
+    await this.membership.assertPermission(
+      requireServerId(channel),
+      userId,
+      Permission.SEND_MESSAGES,
+    );
+    return channel;
+  }
+
+  private async assertDmMember(channelId: string, userId: string) {
+    const member = await this.prisma.channelMember.findUnique({
+      where: { channelId_userId: { channelId, userId } },
+    });
+    if (!member) {
+      throw new ForbiddenException('Você não participa deste chat');
+    }
+    return member;
   }
 
   async listMessages(
@@ -74,13 +109,12 @@ export class MessagesService {
     channelId: string,
     userId: string,
     dto: CreateMessageDto,
-  ): Promise<{ message: PublicMessage; serverId: string }> {
-    const channel = await this.resolveChannel(channelId);
-    await this.membership.assertPermission(
-      channel.serverId,
-      userId,
-      Permission.SEND_MESSAGES,
-    );
+  ): Promise<{
+    message: PublicMessage;
+    serverId: string | null;
+    dmRecipientId: string | null;
+  }> {
+    const channel = await this.assertCanSend(channelId, userId);
 
     const message = await this.prisma.message.create({
       data: {
@@ -92,7 +126,20 @@ export class MessagesService {
       include: { author: true },
     });
 
-    return { message: toPublicMessage(message), serverId: channel.serverId };
+    let dmRecipientId: string | null = null;
+    if (channel.type === 'DM') {
+      const other = await this.prisma.channelMember.findFirst({
+        where: { channelId, userId: { not: userId } },
+        select: { userId: true },
+      });
+      dmRecipientId = other?.userId ?? null;
+    }
+
+    return {
+      message: toPublicMessage(message),
+      serverId: channel.serverId,
+      dmRecipientId,
+    };
   }
 
   async updateMessage(
@@ -137,8 +184,13 @@ export class MessagesService {
 
     if (existing.authorId !== userId) {
       const channel = await this.resolveChannel(existing.channelId);
+      if (channel.type === 'DM') {
+        throw new ForbiddenException(
+          'Você só pode apagar suas próprias mensagens',
+        );
+      }
       await this.membership.assertPermission(
-        channel.serverId,
+        requireServerId(channel),
         userId,
         Permission.MANAGE_CHANNELS,
       );
