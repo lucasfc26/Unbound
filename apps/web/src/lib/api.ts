@@ -3,17 +3,14 @@ const rawApiUrl = (
 ).replace(/\/$/, "");
 
 /**
- * HTTP API base. In production this is the site origin
- * (`https://unbound.maselcorp.com.br`); nginx forwards /auth, /users,
- * /uploads, /servers, … to Nest. There is no `/api` prefix.
+ * HTTP API base. Production nginx routes /auth, /users, /uploads, … on the
+ * site origin — there is no `/api` prefix. A trailing `/api` in VITE_API_URL
+ * (e.g. leftover in the VPS compose file) is stripped so login does not 404.
  */
-export const API_URL = rawApiUrl;
+export const API_URL = rawApiUrl.replace(/\/api$/i, "");
 
-/**
- * Origin without a trailing `/api`, if one was set. Socket.IO must talk to
- * the host root (`io("…/api")` would be a namespace).
- */
-export const PUBLIC_ORIGIN = rawApiUrl.replace(/\/api$/i, "");
+/** Same host as the API; kept as an alias for Socket.IO / media. */
+export const PUBLIC_ORIGIN = API_URL;
 
 /**
  * The public web origin — used for links meant to be opened by someone else
