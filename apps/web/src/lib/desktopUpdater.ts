@@ -55,7 +55,14 @@ export async function checkAndInstallUpdate(
     });
 
     onProgress({ phase: "done", version: update.version });
-    const { relaunch } = await import("@tauri-apps/plugin-process");
+    const { exit, relaunch } = await import("@tauri-apps/plugin-process");
+    // NSIS already replaces the binary and relaunches. Calling relaunch()
+    // here would start the *old* exe while the installer is still running,
+    // which then checks for updates again and loops forever.
+    if (navigator.userAgent.includes("Windows")) {
+      await exit(0);
+      return;
+    }
     await relaunch();
   } catch (err) {
     // Missing/unreachable endpoint, no release published yet, etc. — not
