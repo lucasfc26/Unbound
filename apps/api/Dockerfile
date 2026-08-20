@@ -24,6 +24,10 @@ COPY apps/web apps/web
 # so its prisma/schema.prisma has to already be in place before this step.
 RUN pnpm install --frozen-lockfile
 
+# Fail the image here if the linux native binary didn't land. Otherwise Nest
+# used to crash on `require('sharp')` during boot and nginx returned 502.
+RUN pnpm --filter @maselview/api exec node -e "require('sharp'); console.log('sharp ok')"
+
 RUN pnpm --filter @maselview/api build
 
 WORKDIR /app/apps/api

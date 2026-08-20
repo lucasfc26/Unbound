@@ -1,15 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import type { Sharp } from 'sharp';
-
-// sharp 0.35 ships dual CJS/ESM typings; under Nest's CommonJS tsconfig the
-// callable default isn't visible, so we bind the runtime CJS export ourselves.
-const sharp = require('sharp') as (
-  input: Buffer,
-  options?: { animated?: boolean },
-) => Sharp;
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -21,6 +18,26 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 export type ImageFolder = 'avatars' | 'icons';
+
+type SharpFactory = (
+  input: Buffer,
+  options?: { animated?: boolean },
+) => Sharp;
+
+// Load on first upload, not at process boot — a missing linux binary used
+// to throw on `require('sharp')` while Nest was still importing modules,
+// so the API never bound :3000 and nginx returned 502 on every route.
+function getSharp(): SharpFactory {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const loaded = require('sharp') as SharpFactory | { default: SharpFactory };
+  const factory = typeof loaded === 'function' ? loaded : loaded.default;
+  if (typeof factory !== 'function') {
+    throw new InternalServerErrorException(
+      'Processamento de imagem indisponível',
+    );
+  }
+  return factory;
+}
 
 @Injectable()
 export class ImageStorageService {
@@ -42,12 +59,13 @@ export class ImageStorageService {
 
     let output: Buffer;
     try {
-      output = await sharp(file.buffer, { animated: false })
+      output = await getSharp()(file.buffer, { animated: false })
         .rotate()
         .resize(size, size, { fit: 'cover', position: 'centre' })
         .webp({ quality: 80, effort: 4 })
         .toBuffer();
-    } catch {
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) throw error;
       throw new BadRequestException('Não foi possível processar essa imagem');
     }
 

@@ -39,6 +39,7 @@
     "helmet": "^7.1.0",
     "ioredis": "^5.4.1",
     "mediasoup": "^3.26.0",
+    "multer": "^2.2.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.0",

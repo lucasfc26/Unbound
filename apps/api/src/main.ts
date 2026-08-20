@@ -49,4 +49,8 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`API rodando em http://localhost:${port}`);
 }
-bootstrap();
+
+bootstrap().catch((error) => {
+  console.error('Falha ao iniciar a API', error);
+  process.exit(1);
+});
