@@ -165,6 +165,17 @@ export function UserArea() {
             <Settings className="h-4 w-4" />
           </IconButton>
         </Tooltip>
+
+        <Tooltip content="Sair da conta">
+          <IconButton
+            aria-label="Sair da conta"
+            size="sm"
+            variant="danger"
+            onClick={() => void handleLogout()}
+          >
+            <LogOut className="h-4 w-4" />
+          </IconButton>
+        </Tooltip>
       </div>
     </div>
   );

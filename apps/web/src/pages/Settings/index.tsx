@@ -9,10 +9,12 @@ import {
   Palette,
   Keyboard,
   Info,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useToastStore } from "@/stores/useToastStore";
+import { useVoiceStore } from "@/stores/useVoiceStore";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { VoiceSettings } from "@/components/settings/VoiceSettings";
 import { AccountSettings } from "@/components/settings/AccountSettings";
@@ -47,7 +49,17 @@ const sections: { id: SettingsSection; label: string; icon: typeof User }[] = [
 export default function SettingsPage() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+  const leaveCall = useVoiceStore((state) => state.leave);
+  const pushToast = useToastStore((state) => state.push);
   const [active, setActive] = useState<SettingsSection>("account");
+
+  async function handleLogout() {
+    leaveCall();
+    await logout();
+    pushToast("success", "Você saiu da sua conta");
+    navigate("/login");
+  }
 
   return (
     <div className="flex h-screen w-screen bg-bg-primary text-text-primary">
@@ -68,6 +80,16 @@ export default function SettingsPage() {
             {section.label}
           </button>
         ))}
+        <div className="mt-auto border-t border-border pt-2">
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-body text-danger hover:bg-danger/10"
+          >
+            <LogOut className="h-4.5 w-4.5" />
+            Sair da conta
+          </button>
+        </div>
       </nav>
 
       <div className="relative flex-1 overflow-y-auto">
