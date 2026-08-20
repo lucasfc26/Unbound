@@ -57,14 +57,14 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Input
             label="Nome de exibição"
-            placeholder="Lucas Cunha"
+            placeholder="seu nome"
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
             autoComplete="name"
           />
           <Input
             label="Usuário"
-            placeholder="lucas"
+            placeholder="usuário"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             autoComplete="username"

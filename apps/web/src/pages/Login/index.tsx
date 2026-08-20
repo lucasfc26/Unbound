@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -37,6 +38,13 @@ export default function LoginPage() {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-bg-primary px-4">
       <div className="w-full max-w-sm animate-scale-in rounded-lg border border-border bg-elevated p-8 shadow-lg">
+        <Link
+          to="/"
+          className="mb-6 inline-flex items-center gap-1.5 text-small text-text-secondary hover:text-text-primary"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Voltar
+        </Link>
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-black">
             <img src="/favicon.png" alt="Unbound" className="h-full w-full object-cover" />
@@ -50,7 +58,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Input
             label="Usuário ou e-mail"
-            placeholder="lucas"
+            placeholder="usuário"
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
             autoComplete="username"
