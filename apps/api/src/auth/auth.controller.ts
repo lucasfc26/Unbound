@@ -63,7 +63,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.auth.logout(user.id);
-    res.clearCookie(REFRESH_COOKIE, { path: '/' });
+    res.clearCookie(REFRESH_COOKIE, this.refreshCookieOptions());
   }
 
   @Get('me')
@@ -72,12 +72,21 @@ export class AuthController {
     return this.auth.me(user.id);
   }
 
+  private refreshCookieOptions() {
+    const isProd = process.env.NODE_ENV === 'production';
+    return {
+      httpOnly: true,
+      // Desktop (http://tauri.localhost) is cross-site to the API, so Lax
+      // cookies are dropped and the next launch would force a new login.
+      sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+      secure: isProd,
+      path: '/',
+    };
+  }
+
   private setRefreshCookie(res: Response, token: string) {
     res.cookie(REFRESH_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
+      ...this.refreshCookieOptions(),
       maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
     });
   }

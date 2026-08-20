@@ -122,7 +122,9 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
     if (this.announcedIpResolved) return this.announcedIp;
     this.announcedIpResolved = true;
 
-    const configured = this.config.get<string>('MEDIASOUP_ANNOUNCED_IP')?.trim();
+    const configured = this.config
+      .get<string>('MEDIASOUP_ANNOUNCED_IP')
+      ?.trim();
     if (configured && !isUnusableAnnouncedIp(configured)) {
       this.announcedIp = configured;
       this.logger.log(`mediasoup announced IP from env: ${this.announcedIp}`);
@@ -132,7 +134,9 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
     const detected = await detectPublicIpv4();
     if (detected) {
       this.announcedIp = detected;
-      this.logger.log(`mediasoup announced IP auto-detected: ${this.announcedIp}`);
+      this.logger.log(
+        `mediasoup announced IP auto-detected: ${this.announcedIp}`,
+      );
       return this.announcedIp;
     }
 
@@ -162,12 +166,19 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
     this.transports.set(transport.id, { transport, channelId, userId });
 
     const iceSummary = transport.iceCandidates
-      .map((candidate) => `${candidate.ip}:${candidate.port}/${candidate.protocol}`)
+      .map(
+        (candidate) =>
+          `${candidate.ip}:${candidate.port}/${candidate.protocol}`,
+      )
       .join(', ');
-    this.logger.log(`SFU transport ${transport.id} ICE ${iceSummary || '(none)'}`);
-    if (transport.iceCandidates.some((candidate) => isPrivateIpv4(candidate.ip))) {
+    this.logger.log(
+      `SFU transport ${transport.id} ICE ${iceSummary || '(none)'}`,
+    );
+    if (
+      transport.iceCandidates.some((candidate) => isPrivateIpv4(candidate.ip))
+    ) {
       this.logger.warn(
-        'ICE candidates include a private IP — remote viewers will see a black screen unless they are on the same LAN. Set MEDIASOUP_ANNOUNCED_IP to this host\'s public IPv4.',
+        "ICE candidates include a private IP — remote viewers will see a black screen unless they are on the same LAN. Set MEDIASOUP_ANNOUNCED_IP to this host's public IPv4.",
       );
     }
 
@@ -282,6 +293,14 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
     const entry = this.consumers.get(consumerId);
     if (!entry || entry.userId !== userId) return;
     await entry.consumer.resume();
+  }
+
+  /** Explicit unsubscribe — called when a viewer stops watching a screen share that's still live. */
+  closeConsumer(consumerId: string, userId: string): void {
+    const entry = this.consumers.get(consumerId);
+    if (!entry || entry.userId !== userId) return;
+    entry.consumer.close();
+    this.consumers.delete(consumerId);
   }
 
   /** Closes a user's producer(s) in a channel (screen share stopped). Returns their ids for the caller to broadcast. */

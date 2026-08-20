@@ -453,6 +453,15 @@ export class RealtimeGateway
     return {};
   }
 
+  /** Fire-and-forget — a viewer stopped watching a still-live share, free the SFU consumer. */
+  @SubscribeMessage('sfu:close_consumer')
+  onSfuCloseConsumer(
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: { consumerId: string },
+  ) {
+    this.sfu.closeConsumer(data.consumerId, client.data.user.id);
+  }
+
   @SubscribeMessage('sfu:stop_producing')
   onSfuStopProducing(
     @ConnectedSocket() client: AppSocket,

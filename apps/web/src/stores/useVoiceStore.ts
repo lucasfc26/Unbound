@@ -43,8 +43,11 @@ export interface RemoteParticipant {
   connectionState: RTCPeerConnectionState;
   micMuted: boolean;
   serverMuted: boolean;
+  /** Only set while actively watching — populated on demand, not the moment they start sharing. */
   screenStream: MediaStream | null;
   sharingScreen: boolean;
+  /** Producers available to subscribe to, independent of whether anyone's watching yet. */
+  screenProducers: { producerId: string; kind: MsTypes.MediaKind }[];
 }
 
 export interface VoiceRosterEntry {
@@ -99,6 +102,8 @@ interface VoiceState {
   toggleCamera: () => Promise<void>;
   startScreenShare: () => Promise<void>;
   stopScreenShare: () => void;
+  watchScreen: (userId: string) => void;
+  stopWatchingScreen: () => void;
   notifyWatching: () => void;
   syncRoster: () => void;
 }
@@ -133,6 +138,8 @@ const sfuProducers = new Map<string, MsTypes.Producer>();
 const sfuConsumers = new Map<string, { consumer: MsTypes.Consumer; userId: string }>();
 const sfuConsumedProducerIds = new Set<string>();
 let micEnabledBeforeDeafen = true;
+/** Whose screen we're actively subscribed to right now — at most one at a time (RTCHIBRIDO.mp Parte 3). */
+let watchingUserId: string | null = null;
 
 function emptyParticipant(
   userId: string,
@@ -148,8 +155,36 @@ function emptyParticipant(
     serverMuted: extras?.serverMuted ?? false,
     screenStream: null,
     sharingScreen: false,
+    screenProducers: [],
     ...extras,
   };
+}
+
+/** Unsubscribes from whoever we're currently watching, freeing the SFU consumer(s) server-side too. */
+function closeWatchedConsumers(set: SetFn) {
+  if (!watchingUserId) return;
+  const targetUserId = watchingUserId;
+  watchingUserId = null;
+  const socket = getSocket();
+
+  for (const [consumerId, entry] of sfuConsumers) {
+    if (entry.userId !== targetUserId) continue;
+    sfuConsumedProducerIds.delete(entry.consumer.producerId);
+    entry.consumer.close();
+    sfuConsumers.delete(consumerId);
+    socket.emit("sfu:close_consumer", { consumerId });
+  }
+
+  set((state) => {
+    const existing = state.remoteParticipants[targetUserId];
+    if (!existing) return state;
+    return {
+      remoteParticipants: {
+        ...state.remoteParticipants,
+        [targetUserId]: { ...existing, screenStream: null },
+      },
+    };
+  });
 }
 
 function upsertRoster(
@@ -292,6 +327,7 @@ function resetSfuState() {
   sfuRecvTransport = null;
   sfuDevice = null;
   sfuDeviceChannelId = null;
+  watchingUserId = null;
 }
 
 async function ensureSfuDevice(channelId: string): Promise<Device> {
@@ -464,17 +500,38 @@ async function consumeProducer(
   }
 }
 
-/** Fetches screen shares already live in the channel so a viewer who joins mid-broadcast catches up. */
+/**
+ * Fetches screen shares already live in the channel so a viewer who joins
+ * mid-broadcast knows who's sharing. Doesn't subscribe to any of them —
+ * that only happens when the user actually clicks "Assistir Tela" (Parte 3:
+ * subscription dinâmica in RTCHIBRIDO.mp — never receive video no one's watching).
+ */
 async function catchUpOnScreenShares(channelId: string, set: SetFn) {
   const socket = getSocket();
   const producers = await emitAck<
     { producerId: string; userId: string; kind: MsTypes.MediaKind }[]
   >(socket, "sfu:list_producers", { channelId });
-  for (const producer of producers) {
-    consumeProducer(channelId, producer.producerId, producer.userId, set).catch(
-      (err) => console.error("[voice] SFU catch-up consume failed", err),
-    );
-  }
+  if (producers.length === 0) return;
+
+  set((state) => {
+    let remoteParticipants = state.remoteParticipants;
+    for (const producer of producers) {
+      const existing = remoteParticipants[producer.userId];
+      if (!existing) continue;
+      remoteParticipants = {
+        ...remoteParticipants,
+        [producer.userId]: {
+          ...existing,
+          sharingScreen: true,
+          screenProducers: [
+            ...existing.screenProducers,
+            { producerId: producer.producerId, kind: producer.kind },
+          ],
+        },
+      };
+    }
+    return { remoteParticipants };
+  });
 }
 
 function onSfuProducerClosed(userId: string, producerId: string, set: SetFn) {
@@ -486,18 +543,21 @@ function onSfuProducerClosed(userId: string, producerId: string, set: SetFn) {
   }
   sfuConsumedProducerIds.delete(producerId);
 
-  const stillSharing = [...sfuConsumers.values()].some(
-    (entry) => entry.userId === userId,
-  );
   set((state) => {
     const existing = state.remoteParticipants[userId];
     if (!existing) return state;
+    const screenProducers = existing.screenProducers.filter(
+      (p) => p.producerId !== producerId,
+    );
+    const stillSharing = screenProducers.length > 0;
+    if (!stillSharing && watchingUserId === userId) watchingUserId = null;
     return {
       remoteParticipants: {
         ...state.remoteParticipants,
         [userId]: {
           ...existing,
           sharingScreen: stillSharing,
+          screenProducers,
           screenStream: stillSharing ? existing.screenStream : null,
         },
       },
@@ -1058,8 +1118,30 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       ) {
         return;
       }
-      consumeProducer(channelId, producerId, userId, set).catch(() => {});
+      set((s) => {
+        const existing = s.remoteParticipants[userId];
+        if (!existing) return s;
+        return {
+          remoteParticipants: {
+            ...s.remoteParticipants,
+            [userId]: {
+              ...existing,
+              sharingScreen: true,
+              screenProducers: [
+                ...existing.screenProducers,
+                { producerId, kind },
+              ],
+            },
+          },
+        };
+      });
       if (kind === "video") playVoiceCue("stream");
+      // Already watching this person (e.g. their audio producer arrived
+      // after video) — subscribe to the new one too instead of waiting for
+      // another click.
+      if (watchingUserId === userId) {
+        consumeProducer(channelId, producerId, userId, set).catch(() => {});
+      }
     },
   );
 
@@ -1428,6 +1510,26 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
       state.screenStream.getTracks().forEach((track) => track.stop());
       set({ screenStream: null, screenSharing: false });
+    },
+
+    watchScreen: (userId) => {
+      const state = get();
+      const channelId = state.activeChannelId;
+      const participant = state.remoteParticipants[userId];
+      if (!channelId || !participant?.sharingScreen) return;
+      if (watchingUserId === userId) return;
+
+      closeWatchedConsumers(set); // at most one screen watched at a time
+      watchingUserId = userId;
+      for (const producer of participant.screenProducers) {
+        consumeProducer(channelId, producer.producerId, userId, set).catch(
+          (err) => console.error("[voice] SFU watch failed", err),
+        );
+      }
+    },
+
+    stopWatchingScreen: () => {
+      closeWatchedConsumers(set);
     },
 
     notifyWatching: () => {

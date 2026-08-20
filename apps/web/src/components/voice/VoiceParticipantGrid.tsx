@@ -45,11 +45,12 @@ export function VoiceParticipantGrid({
 
   useEffect(() => {
     if (!watchingUserId) return;
+    // Not gated on screenStream here — right after clicking watch it's still
+    // null for a moment while the SFU consumer spins up, and that's not the
+    // same as the person having stopped sharing.
     const stillSharing = participants.some(
       (participant) =>
-        participant.user.id === watchingUserId &&
-        participant.sharingScreen &&
-        participant.screenStream,
+        participant.user.id === watchingUserId && participant.sharingScreen,
     );
     if (!stillSharing) setWatchingUserId(null);
   }, [participants, watchingUserId]);
@@ -64,7 +65,10 @@ export function VoiceParticipantGrid({
           showCards={showWatchingCards}
           onToggleCards={() => setShowWatchingCards((value) => !value)}
           onStopShare={watched.isLocal ? onStopScreenShare : undefined}
-          onStopWatching={() => setWatchingUserId(null)}
+          onStopWatching={() => {
+            useVoiceStore.getState().stopWatchingScreen();
+            setWatchingUserId(null);
+          }}
         />
         {showWatchingCards && (
           <div className="mt-2 max-w-full shrink-0 self-start overflow-x-auto overflow-y-hidden">
@@ -96,9 +100,10 @@ export function VoiceParticipantGrid({
             key={participant.user.id}
             {...participant}
             onWatchScreen={
-              participant.sharingScreen && participant.screenStream
+              participant.sharingScreen
                 ? () => {
                     notifyWatching();
+                    useVoiceStore.getState().watchScreen(participant.user.id);
                     setWatchingUserId(participant.user.id);
                   }
                 : undefined
