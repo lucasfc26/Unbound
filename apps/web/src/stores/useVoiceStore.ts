@@ -24,6 +24,19 @@ const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 const SPEAKING_THRESHOLD = 12;
 
 /**
+ * RTCHIBRIDO.mp Parte 5/6 — Qualidade adaptativa / Simulcast. Three spatial
+ * layers published for every screen share; mediasoup's bandwidth estimation
+ * then hands each viewer whichever layer fits their downlink (poor -> r0,
+ * excellent -> r2) without us tracking connection quality client-side.
+ * Targets match the doc's reference table (~360p/540p/720p).
+ */
+const SCREEN_SHARE_ENCODINGS: RTCRtpEncodingParameters[] = [
+  { rid: "r0", scaleResolutionDownBy: 4, maxBitrate: 500_000, maxFramerate: 20 },
+  { rid: "r1", scaleResolutionDownBy: 2, maxBitrate: 1_000_000, maxFramerate: 30 },
+  { rid: "r2", scaleResolutionDownBy: 1, maxBitrate: 2_000_000, maxFramerate: 30 },
+];
+
+/**
  * Screen share ("transmissão") goes through the SFU — mic/camera stay on the P2P mesh above.
  * Uses socket.io's ack timeout so a server-side exception (which arrives as a separate
  * 'error' event, not as the ack) actually rejects instead of hanging the caller forever.
@@ -1479,9 +1492,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             const producer = await transport.produce({
               track,
               encodings:
-                track.kind === "video"
-                  ? [{ maxBitrate: 3_000_000 }]
-                  : undefined,
+                track.kind === "video" ? SCREEN_SHARE_ENCODINGS : undefined,
               codecOptions:
                 track.kind === "video"
                   ? { videoGoogleStartBitrate: 1000 }

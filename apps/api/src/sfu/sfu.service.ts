@@ -247,6 +247,14 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ id: string; channelId: string }> {
     const { transport, channelId } = this.getOwnTransport(transportId, userId);
     const producer = await transport.produce({ kind, rtpParameters });
+    if (kind === 'video') {
+      // RTCHIBRIDO.mp Parte 5/6: confirms the client's simulcast encodings
+      // (r0/r1/r2) actually made it into the negotiated producer — silently
+      // falling back to one layer would defeat per-viewer quality adaptation.
+      this.logger.log(
+        `producer ${producer.id} negotiated ${producer.rtpParameters.encodings?.length ?? 1} encoding(s)`,
+      );
+    }
     // RTCHIBRIDO.mp Parte 4: nobody's watching yet at the moment a share
     // starts — hold it paused (near-zero upload) until the first viewer subscribes.
     await producer.pause();
@@ -348,6 +356,20 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
     });
     this.consumers.set(consumer.id, { consumer, channelId, userId });
     this.addViewer(producerId);
+
+    if (consumer.type === 'simulcast') {
+      // RTCHIBRIDO.mp Parte 5/6: mediasoup's own bandwidth estimation picks
+      // the layer per viewer — this just makes that choice visible instead
+      // of being an invisible black box during testing/debugging.
+      this.logger.log(
+        `consumer ${consumer.id} simulcast, starting layer ${JSON.stringify(consumer.preferredLayers)}`,
+      );
+      consumer.on('layerschange', (layers) => {
+        this.logger.log(
+          `consumer ${consumer.id} layer switch -> ${layers ? JSON.stringify(layers) : 'none'}`,
+        );
+      });
+    }
 
     // The consumer is already gone by the time either of these fires — just
     // drop our bookkeeping and count the viewer as gone. producerclose needs
