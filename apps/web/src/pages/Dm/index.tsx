@@ -80,9 +80,10 @@ export default function DmPage() {
 
   useEffect(() => {
     if (!channelId) return;
+    const id = channelId;
     function markIfVisible() {
       if (document.hidden) return;
-      void markRead(channelId);
+      void markRead(id);
     }
     document.addEventListener("visibilitychange", markIfVisible);
     window.addEventListener("focus", markIfVisible);

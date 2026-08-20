@@ -16,7 +16,7 @@ import { API_URL } from "@/lib/api";
 // it into a Docker build context, which is what silently turned this into
 // index.html served with a .exe filename before.
 const DOWNLOAD_URL = `${API_URL}/uploads/releases/Unbound-Setup.exe`;
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.1.1";
 
 const FEATURES = [
   {
@@ -184,7 +184,7 @@ function Hero() {
         className="animate-fade-in mt-4 text-caption text-text-muted"
         style={{ animationDelay: "220ms", animationFillMode: "backwards" }}
       >
-        Windows · 64-bit · v{APP_VERSION} · 2,1 MB
+        Windows · 64-bit · v{APP_VERSION} · 3,1 MB
       </span>
 
       <HeroPreview />
@@ -302,7 +302,7 @@ function DownloadSection() {
           <PlatformCard
             icon={<Laptop className="h-6 w-6" />}
             name="Windows"
-            detail={`v${APP_VERSION} · 2,1 MB`}
+            detail={`v${APP_VERSION} · 3,1 MB`}
             href={DOWNLOAD_URL}
             available
           />
