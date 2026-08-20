@@ -1,4 +1,20 @@
-export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+const rawApiUrl = (
+  import.meta.env.VITE_API_URL ?? "http://localhost:3000"
+).replace(/\/$/, "");
+
+/**
+ * HTTP API base. In production behind nginx this is
+ * `https://unbound.maselcorp.com.br/api` — the proxy strips `/api` before
+ * the request hits Nest (which has no global prefix).
+ */
+export const API_URL = rawApiUrl;
+
+/**
+ * Public origin without a trailing `/api`. Socket.IO and `/uploads` are
+ * served on the host root, not under the API prefix (`io("…/api")` would
+ * be treated as a Socket.IO namespace).
+ */
+export const PUBLIC_ORIGIN = rawApiUrl.replace(/\/api$/i, "");
 
 /**
  * The public web origin — used for links meant to be opened by someone else

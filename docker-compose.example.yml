@@ -94,7 +94,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        VITE_API_URL: https://unbound.maselcorp.com.br
+        VITE_API_URL: https://unbound.maselcorp.com.br/api
     restart: unless-stopped
     ports:
       - "127.0.0.1:8084:5173"

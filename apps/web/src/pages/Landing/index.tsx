@@ -9,13 +9,13 @@ import {
   Laptop,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
-import { API_URL } from "@/lib/api";
+import { PUBLIC_ORIGIN } from "@/lib/api";
 
 // Served from the backend's persistent uploads volume, not bundled into the
 // frontend image — a gitignored local build artifact never reliably makes
 // it into a Docker build context, which is what silently turned this into
 // index.html served with a .exe filename before.
-const DOWNLOAD_URL = `${API_URL}/uploads/releases/Unbound-Setup.exe`;
+const DOWNLOAD_URL = `${PUBLIC_ORIGIN}/uploads/releases/Unbound-Setup.exe`;
 const APP_VERSION = "0.1.0";
 
 const FEATURES = [
