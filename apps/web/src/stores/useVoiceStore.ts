@@ -105,6 +105,8 @@ interface VoiceState {
   cameraEnabled: boolean;
   screenSharing: boolean;
   screenStream: MediaStream | null;
+  /** True once the browser confirms it applied the `restrictOwnAudio` constraint to the current screen-share audio track — meaning system-audio capture already excludes this app's own remote-voice playback, so VoiceAudioLayer doesn't need to mute it locally as an echo guard. */
+  screenShareOwnAudioRestricted: boolean;
   /** How our own screen share is being sent — "sfu" (default) or "p2p" (Transmissão > Manual). `null` when not sharing. Viewer-count tracking below only applies to "sfu". */
   screenTransport: "p2p" | "sfu" | null;
   /** How many people are actively watching your own screen share right now (RTCHIBRIDO.mp Parte 4). Only meaningful for the SFU transport — P2P has no server-side viewer tracking. */
@@ -857,6 +859,7 @@ async function performRealJoin(
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
+    screenShareOwnAudioRestricted: false,
     screenTransport: null,
     screenViewerCount: 0,
     remoteParticipants: {},
@@ -1367,6 +1370,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
+    screenShareOwnAudioRestricted: false,
     screenTransport: null,
     screenViewerCount: 0,
     remoteParticipants: {},
@@ -1409,6 +1413,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         cameraEnabled: false,
         screenSharing: false,
         screenStream: null,
+        screenShareOwnAudioRestricted: false,
         screenViewerCount: 0,
         serverMuted: false,
         locallyMutedUserIds: {},
@@ -1601,11 +1606,34 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         settings.broadcastMode === "manual" &&
         settings.broadcastTransport === "p2p";
 
+      // restrictOwnAudio (Chrome 140+) tells the browser to strip audio that
+      // originated from this document out of the captured system audio —
+      // that's exactly the remote participants' voices we render locally, so
+      // when it's honored the echo is prevented at the source and we don't
+      // need to mute local playback at all. Only request it when the browser
+      // advertises support; older WebViews silently ignore unknown
+      // constraint objects passed as `audio`, so it's safe either way.
+      const supportsRestrictOwnAudio =
+        typeof navigator.mediaDevices.getSupportedConstraints === "function" &&
+        "restrictOwnAudio" in navigator.mediaDevices.getSupportedConstraints();
+
+      // Not yet in this TS version's lib.dom.d.ts — the runtime constraint
+      // exists (Chrome 140+) well ahead of the shipped type definitions.
+      type RestrictOwnAudioConstraints = MediaTrackConstraints & {
+        restrictOwnAudio?: boolean;
+      };
+      type RestrictOwnAudioSettings = MediaTrackSettings & {
+        restrictOwnAudio?: boolean;
+      };
+
+      const audioConstraint: boolean | RestrictOwnAudioConstraints =
+        supportsRestrictOwnAudio ? { restrictOwnAudio: true } : true;
+
       let screenStream: MediaStream;
       try {
         screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
-          audio: true,
+          audio: audioConstraint,
         });
       } catch {
         return;
@@ -1620,20 +1648,29 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         .getVideoTracks()[0]
         ?.addEventListener("ended", () => get().stopScreenShare());
 
+      // Only the audio track's actual applied settings confirm the browser
+      // honored the constraint — requesting it isn't a guarantee.
+      const ownAudioRestricted =
+        (
+          screenStream.getAudioTracks()[0]?.getSettings() as
+            | RestrictOwnAudioSettings
+            | undefined
+        )?.restrictOwnAudio === true;
+
       // Show the local preview right away — it doesn't depend on the
       // SFU/P2P handshake below, only on the capture itself having succeeded.
       set({
         screenStream,
         screenSharing: true,
+        screenShareOwnAudioRestricted: ownAudioRestricted,
         screenTransport: useP2p ? "p2p" : "sfu",
       });
       playVoiceCue("stream");
 
-      if (screenStream.getAudioTracks().length > 0) {
-        // The capture is a system/tab audio loopback — it can't tell "other
-        // participants' voice" apart from anything else playing, so without
-        // this it re-broadcasts their own voice back to them. See
-        // VoiceAudioLayer's sharingScreenWithAudio.
+      if (screenStream.getAudioTracks().length > 0 && !ownAudioRestricted) {
+        // Fallback path: the browser couldn't filter our own audio out of the
+        // system-audio capture, so VoiceAudioLayer falls back to muting local
+        // playback of remote participants as the only reliable echo guard.
         useToastStore
           .getState()
           .push(
@@ -1750,6 +1787,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       set({
         screenStream: null,
         screenSharing: false,
+        screenShareOwnAudioRestricted: false,
         screenViewerCount: 0,
         screenTransport: null,
       });
