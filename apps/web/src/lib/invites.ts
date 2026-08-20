@@ -17,6 +17,7 @@ export interface ApiInvitePreview {
     name: string;
     description: string | null;
     iconColor: string;
+    iconUrl: string | null;
   };
   memberCount: number;
   expiresAt: string | null;

@@ -1,15 +1,10 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-} from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { User, UserStatus } from '@prisma/client';
-import { mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { withUserContext } from '../prisma/rls';
 import { generateFriendCode } from './friend-code';
+import { ImageStorageService } from '../common/image-storage.service';
 
 export interface CreateUserInput {
   username: string;
@@ -41,7 +36,10 @@ function isFriendCodeCollision(error: unknown): boolean {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly images: ImageStorageService,
+  ) {}
 
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
@@ -116,29 +114,41 @@ export class UsersService {
     userId: string,
     input: UpdateProfileInput,
   ): Promise<User> {
+    if (input.avatarUrl === null) {
+      return this.clearAvatar(userId);
+    }
     return this.prisma.user.update({ where: { id: userId }, data: input });
   }
 
   async saveAvatar(
     userId: string,
-    file: { buffer: Buffer; mimetype: string },
+    file: { buffer: Buffer; mimetype: string; size: number },
   ): Promise<User> {
-    const allowed = new Set([
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/gif',
-    ]);
-    if (!allowed.has(file.mimetype)) {
-      throw new BadRequestException('Use uma imagem JPG, PNG, WEBP ou GIF');
-    }
-    const dir = join(process.cwd(), 'uploads', 'avatars');
-    mkdirSync(dir, { recursive: true });
-    const filename = `${userId}.jpg`;
-    writeFileSync(join(dir, filename), file.buffer);
+    const current = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { avatarUrl: true },
+    });
+    const avatarUrl = await this.images.saveSquare(
+      file,
+      'avatars',
+      current.avatarUrl,
+      512,
+    );
     return this.prisma.user.update({
       where: { id: userId },
-      data: { avatarUrl: `/uploads/avatars/${filename}` },
+      data: { avatarUrl },
+    });
+  }
+
+  async clearAvatar(userId: string): Promise<User> {
+    const current = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { avatarUrl: true },
+    });
+    this.images.removeStored(current.avatarUrl, 'avatars');
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: null },
     });
   }
 

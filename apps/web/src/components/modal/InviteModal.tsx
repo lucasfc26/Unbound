@@ -3,7 +3,7 @@ import { Copy, Check } from "lucide-react";
 import { Modal } from "./Modal";
 import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/stores/useToastStore";
-import { ApiError } from "@/lib/api";
+import { ApiError, PUBLIC_APP_URL } from "@/lib/api";
 import { createInvite } from "@/lib/invites";
 import type { Server } from "@/types";
 
@@ -40,7 +40,7 @@ export function InviteModal({ open, onClose, server }: InviteModalProps) {
       .finally(() => setLoading(false));
   }, [open, server.id]);
 
-  const link = code ? `${window.location.origin}/invite/${code}` : null;
+  const link = code ? `${PUBLIC_APP_URL}/invite/${code}` : null;
 
   async function handleCopy() {
     if (!link) return;

@@ -48,6 +48,15 @@ export class UpdateSettingsDto {
   @IsBoolean()
   notificationSound?: boolean;
 
+  // Aparência
+  @IsOptional()
+  @IsIn(['dark', 'light', 'system'])
+  theme?: 'dark' | 'light' | 'system';
+
+  @IsOptional()
+  @IsIn(['compact', 'normal', 'comfortable'])
+  density?: 'compact' | 'normal' | 'comfortable';
+
   // Voz
   @IsOptional()
   @Type(() => Number)

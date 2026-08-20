@@ -5,6 +5,8 @@ import type {
   Keybind,
   KeybindAction,
   NoiseSuppressionMode,
+  ThemePreference,
+  DensityPreference,
   UserSettings,
 } from "@/types";
 
@@ -17,6 +19,8 @@ export interface ApiUserSettings {
   shareTypingStatus: boolean;
   desktopNotifications: boolean;
   notificationSound: boolean;
+  theme: ThemePreference;
+  density: DensityPreference;
   micGain: number;
   outputGain: number;
   noiseSuppressionMode: NoiseSuppressionMode;
@@ -35,6 +39,8 @@ export interface UpdateUserSettingsInput {
   shareTypingStatus?: boolean;
   desktopNotifications?: boolean;
   notificationSound?: boolean;
+  theme?: ThemePreference;
+  density?: DensityPreference;
   micGain?: number;
   outputGain?: number;
   noiseSuppressionMode?: NoiseSuppressionMode;
@@ -62,6 +68,12 @@ export function toUserSettings(api: ApiUserSettings): UserSettings {
     shareTypingStatus: api.shareTypingStatus,
     desktopNotifications: api.desktopNotifications,
     notificationSound: api.notificationSound,
+    theme:
+      api.theme === "light" || api.theme === "system" ? api.theme : "dark",
+    density:
+      api.density === "compact" || api.density === "comfortable"
+        ? api.density
+        : "normal",
     micGain: api.micGain ?? 100,
     outputGain: api.outputGain ?? 100,
     noiseSuppressionMode:

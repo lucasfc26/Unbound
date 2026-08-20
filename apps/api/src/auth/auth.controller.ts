@@ -12,6 +12,7 @@ import type { Request, Response } from 'express';
 import { AuthService, REFRESH_TOKEN_TTL_SECONDS } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { RefreshDto } from './dto/refresh.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser, type RequestUser } from './current-user.decorator';
 
@@ -28,7 +29,11 @@ export class AuthController {
   ) {
     const { user, accessToken, refreshToken } = await this.auth.register(dto);
     this.setRefreshCookie(res, refreshToken);
-    return { user, accessToken };
+    // Desktop stores this itself (see useAuthStore + lib/desktopSession) as
+    // a fallback session restore path independent of the WebView2 cookie
+    // jar — not a new exposure, this same value already went out on the
+    // same response via Set-Cookie above.
+    return { user, accessToken, refreshToken };
   }
 
   @Post('login')
@@ -39,20 +44,21 @@ export class AuthController {
   ) {
     const { user, accessToken, refreshToken } = await this.auth.login(dto);
     this.setRefreshCookie(res, refreshToken);
-    return { user, accessToken };
+    return { user, accessToken, refreshToken };
   }
 
   @Post('refresh')
   @HttpCode(200)
   async refresh(
     @Req() req: Request,
+    @Body() dto: RefreshDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     const { user, accessToken, refreshToken } = await this.auth.refresh(
-      req.cookies?.[REFRESH_COOKIE],
+      req.cookies?.[REFRESH_COOKIE] ?? dto.refreshToken,
     );
     this.setRefreshCookie(res, refreshToken);
-    return { user, accessToken };
+    return { user, accessToken, refreshToken };
   }
 
   @Post('logout')

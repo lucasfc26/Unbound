@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   UserPlus,
   MessageSquare,
@@ -9,6 +10,7 @@ import {
   Copy,
   RefreshCw,
   Plus,
+  Link2,
 } from "lucide-react";
 import {
   useFriendsStore,
@@ -27,7 +29,6 @@ import { statusLabels } from "@/lib/status";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/modal/Modal";
 import { cn } from "@/lib/cn";
-import { FriendsSidebar } from "@/components/friends/FriendsSidebar";
 
 function formatFriendCode(code: string): string {
   return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
@@ -43,6 +44,7 @@ const tabs: { id: Tab; label: string }[] = [
 ];
 
 export default function FriendsPage() {
+  const navigate = useNavigate();
   const pushToast = useToastStore((state) => state.push);
   const friends = useFriendsStore((state) => state.friends);
   const incomingRequests = useFriendsStore((state) => state.incomingRequests);
@@ -58,6 +60,19 @@ export default function FriendsPage() {
   const [addUsername, setAddUsername] = useState("");
   const [addCode, setAddCode] = useState("");
   const [sending, setSending] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinInput, setJoinInput] = useState("");
+
+  function handleJoinByInvite(event: FormEvent) {
+    event.preventDefault();
+    // Accepts either a bare code or a full link (any domain — the invite
+    // page itself validates the code) — just grab the last path segment.
+    const code = joinInput.trim().split(/[/\\]/).pop()?.trim();
+    if (!code) return;
+    setJoinOpen(false);
+    setJoinInput("");
+    navigate(`/invite/${code}`);
+  }
 
   useEffect(() => {
     fetchAll().catch(() =>
@@ -118,9 +133,7 @@ export default function FriendsPage() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <FriendsSidebar />
-      <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
+    <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b border-black/20 px-4 shadow-sm">
         <div className="flex items-center gap-2 text-body font-semibold text-text-primary">
           <Users className="h-5 w-5 text-text-secondary" />
@@ -148,9 +161,14 @@ export default function FriendsPage() {
         </div>
         <Button
           size="sm"
+          variant="secondary"
           className="ml-auto"
-          onClick={() => setAddOpen(true)}
+          onClick={() => setJoinOpen(true)}
         >
+          <Link2 className="h-4 w-4" />
+          Entrar com convite
+        </Button>
+        <Button size="sm" onClick={() => setAddOpen(true)}>
           <Plus className="h-4 w-4" />
           Adicionar amigo
         </Button>
@@ -228,7 +246,27 @@ export default function FriendsPage() {
           </div>
         </div>
       </Modal>
-      </div>
+
+      <Modal
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        title="Entrar com convite"
+        description="Cole o link de convite ou só o código."
+        size="md"
+      >
+        <form onSubmit={handleJoinByInvite} className="flex gap-2">
+          <Input
+            placeholder="https://unbound.maselcorp.com.br/invite/AB12CD34 ou AB12CD34"
+            value={joinInput}
+            onChange={(event) => setJoinInput(event.target.value)}
+            className="flex-1"
+            autoFocus
+          />
+          <Button type="submit" disabled={!joinInput.trim()}>
+            Entrar
+          </Button>
+        </form>
+      </Modal>
     </div>
   );
 }

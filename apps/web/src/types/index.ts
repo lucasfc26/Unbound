@@ -39,6 +39,9 @@ export type KeybindAction =
   | "openSettings"
   | "toggleNoiseSuppression";
 
+export type ThemePreference = "dark" | "light" | "system";
+export type DensityPreference = "compact" | "normal" | "comfortable";
+
 export interface UserSettings {
   bio: string | null;
   pronouns: string | null;
@@ -47,6 +50,8 @@ export interface UserSettings {
   shareTypingStatus: boolean;
   desktopNotifications: boolean;
   notificationSound: boolean;
+  theme: ThemePreference;
+  density: DensityPreference;
   micGain: number;
   outputGain: number;
   noiseSuppressionMode: NoiseSuppressionMode;

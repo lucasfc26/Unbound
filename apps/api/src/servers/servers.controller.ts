@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,8 +8,11 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, type RequestUser } from '../auth/current-user.decorator';
 import { ServersService } from './servers.service';
@@ -17,6 +21,7 @@ import { UpdateServerDto } from './dto/update-server.dto';
 import { DeleteServerDto } from './dto/delete-server.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { BanMemberDto } from './dto/ban-member.dto';
+import { imageUploadOptions } from '../common/image-upload';
 
 @UseGuards(JwtAuthGuard)
 @Controller('servers')
@@ -45,6 +50,24 @@ export class ServersController {
     @Body() dto: UpdateServerDto,
   ) {
     return this.servers.update(id, user.id, dto);
+  }
+
+  @Post(':id/icon')
+  @UseInterceptors(FileInterceptor('file', imageUploadOptions))
+  uploadIcon(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @UploadedFile() file?: { buffer: Buffer; mimetype: string; size: number },
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Envie uma imagem de até 5 MB');
+    }
+    return this.servers.saveIcon(id, user.id, file);
+  }
+
+  @Delete(':id/icon')
+  clearIcon(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.servers.clearIcon(id, user.id);
   }
 
   @Get(':id/members')

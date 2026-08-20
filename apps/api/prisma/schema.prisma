@@ -95,6 +95,10 @@ model UserSettings {
   desktopNotifications Boolean @default(true)
   notificationSound    Boolean @default(true)
 
+  // Aparência
+  theme   String @default("dark")
+  density String @default("normal")
+
   // Voz
   micGain               Int     @default(100)
   outputGain            Int     @default(100)

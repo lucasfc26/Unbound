@@ -6,13 +6,12 @@ import { useChatStore } from "@/stores/useChatStore";
 import { ApiError } from "@/lib/api";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useToastStore } from "@/stores/useToastStore";
-import { ChannelSidebar } from "@/components/channel/ChannelSidebar";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { MemberSidebar } from "@/components/user/MemberSidebar";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { CreateChannelModal } from "@/components/modal/CreateChannelModal";
 import { useUIStore } from "@/stores/useUIStore";
@@ -71,32 +70,25 @@ export default function ServerPage() {
 
   if (!server) {
     return (
-      <div className="flex flex-1">
-        <ChannelSidebar />
-        <div className="flex flex-1 items-center justify-center bg-bg-primary text-text-secondary">
-          Servidor não encontrado.
-        </div>
+      <div className="flex min-w-0 flex-1 items-center justify-center bg-bg-primary text-text-secondary">
+        Servidor não encontrado.
       </div>
     );
   }
 
   if (!channel) {
     return (
-      <div className="flex flex-1">
-        <ChannelSidebar />
-        <div className="flex-1 bg-bg-primary">
-          <EmptyState
-            icon={Sparkles}
-            title={`Bem-vindo ao ${server.name}`}
-            description="Comece criando seu primeiro canal para a conversa fluir por aqui."
-            action={
-              <Button onClick={() => setCreateChannelOpen(true)}>
-                + Criar canal
-              </Button>
-            }
-          />
-        </div>
-
+      <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
+        <EmptyState
+          icon={Sparkles}
+          title={`Bem-vindo ao ${server.name}`}
+          description="Comece criando seu primeiro canal para a conversa fluir por aqui."
+          action={
+            <Button onClick={() => setCreateChannelOpen(true)}>
+              + Criar canal
+            </Button>
+          }
+        />
         <CreateChannelModal
           open={createChannelOpen}
           categories={categories}
@@ -134,9 +126,7 @@ export default function ServerPage() {
   );
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <ChannelSidebar />
-
+    <div className="flex min-w-0 flex-1 overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
         <ChatHeader channel={channel} />
         <MessageList

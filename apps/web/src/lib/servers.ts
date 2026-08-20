@@ -1,4 +1,4 @@
-import { apiFetch } from "./api";
+import { apiFetch, apiUpload } from "./api";
 import type { ServerRole, UserStatus } from "@/types";
 
 export interface ApiServer {
@@ -61,6 +61,16 @@ export function updateServer(
   return apiFetch<ApiServer>(`/servers/${serverId}`, {
     method: "PATCH",
     body: input,
+  });
+}
+
+export function uploadServerIcon(serverId: string, file: File) {
+  return apiUpload<ApiServer>(`/servers/${serverId}/icon`, file);
+}
+
+export function clearServerIcon(serverId: string) {
+  return apiFetch<ApiServer>(`/servers/${serverId}/icon`, {
+    method: "DELETE",
   });
 }
 

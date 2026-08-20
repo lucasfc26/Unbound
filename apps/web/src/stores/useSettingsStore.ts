@@ -61,15 +61,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   update: async (input) => {
-    const current = get().settings;
-    if (current) {
-      const next = mergeSettings(current, input);
+    const snapshot = get().settings;
+    if (snapshot) {
+      const next = mergeSettings(snapshot, input);
       set({ settings: next });
       applyPipeline(next);
     }
-    const api = await updateUserSettings(input);
-    const settings = toUserSettings(api);
-    set({ settings });
-    applyPipeline(settings);
+    try {
+      const api = await updateUserSettings(input);
+      const settings = toUserSettings(api);
+      set({ settings });
+      applyPipeline(settings);
+    } catch (error) {
+      if (snapshot) {
+        set({ settings: snapshot });
+        applyPipeline(snapshot);
+      }
+      throw error;
+    }
   },
 }));

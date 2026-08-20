@@ -75,26 +75,36 @@ export class VoiceService {
     );
   }
 
-  async assertCanMuteMembers(channelId: string, userId: string): Promise<void> {
+  async assertCanMuteMembers(
+    channelId: string,
+    actorUserId: string,
+    targetUserId: string,
+  ): Promise<void> {
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
     });
     if (!channel) throw new NotFoundException('Canal não encontrado');
-    await this.membership.assertPermission(
+    await this.membership.assertCanManageMember(
       channel.serverId,
-      userId,
+      actorUserId,
+      targetUserId,
       Permission.MUTE_MEMBERS,
     );
   }
 
-  async assertCanMoveMembers(channelId: string, userId: string): Promise<void> {
+  async assertCanMoveMembers(
+    channelId: string,
+    actorUserId: string,
+    targetUserId: string,
+  ): Promise<void> {
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
     });
     if (!channel) throw new NotFoundException('Canal não encontrado');
-    await this.membership.assertPermission(
+    await this.membership.assertCanManageMember(
       channel.serverId,
-      userId,
+      actorUserId,
+      targetUserId,
       Permission.MOVE_MEMBERS,
     );
   }

@@ -1,24 +1,57 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { cn } from "@/lib/cn";
+import { useSettingsStore } from "@/stores/useSettingsStore";
+import { useToastStore } from "@/stores/useToastStore";
+import { ApiError } from "@/lib/api";
+import type { DensityPreference, ThemePreference } from "@/types";
 
-type Theme = "dark" | "light" | "system";
-type Density = "compact" | "normal" | "comfortable";
-
-const themes: { id: Theme; label: string }[] = [
+const themes: { id: ThemePreference; label: string; disabled?: boolean }[] = [
   { id: "dark", label: "Escuro" },
-  { id: "light", label: "Claro" },
-  { id: "system", label: "Sistema" },
+  { id: "light", label: "Claro", disabled: true },
+  { id: "system", label: "Sistema", disabled: true },
 ];
 
-const densities: { id: Density; label: string }[] = [
+const densities: { id: DensityPreference; label: string }[] = [
   { id: "compact", label: "Compacta" },
   { id: "normal", label: "Normal" },
   { id: "comfortable", label: "Confortável" },
 ];
 
 export function AppearanceSettings() {
-  const [theme, setTheme] = useState<Theme>("dark");
-  const [density, setDensity] = useState<Density>("normal");
+  const settings = useSettingsStore((state) => state.settings);
+  const fetchSettings = useSettingsStore((state) => state.fetch);
+  const update = useSettingsStore((state) => state.update);
+  const pushToast = useToastStore((state) => state.push);
+
+  useEffect(() => {
+    if (!settings) fetchSettings().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleChange(
+    input: Parameters<typeof update>[0],
+    successMessage: string,
+  ) {
+    try {
+      await update(input);
+      pushToast("success", successMessage);
+    } catch (error) {
+      pushToast(
+        "error",
+        error instanceof ApiError
+          ? error.message
+          : "Não foi possível salvar essa preferência",
+      );
+    }
+  }
+
+  if (!settings) {
+    return (
+      <p className="text-small text-text-secondary">
+        Carregando configurações...
+      </p>
+    );
+  }
 
   return (
     <div>
@@ -33,9 +66,11 @@ export function AppearanceSettings() {
             <RadioRow
               key={option.id}
               label={option.label}
-              selected={theme === option.id}
-              disabled={option.id !== "dark"}
-              onSelect={() => setTheme(option.id)}
+              selected={settings.theme === option.id}
+              disabled={option.disabled}
+              onSelect={() =>
+                handleChange({ theme: option.id }, "Tema atualizado")
+              }
             />
           ))}
         </div>
@@ -53,8 +88,13 @@ export function AppearanceSettings() {
             <RadioRow
               key={option.id}
               label={option.label}
-              selected={density === option.id}
-              onSelect={() => setDensity(option.id)}
+              selected={settings.density === option.id}
+              onSelect={() =>
+                handleChange(
+                  { density: option.id },
+                  "Densidade da interface atualizada",
+                )
+              }
             />
           ))}
         </div>

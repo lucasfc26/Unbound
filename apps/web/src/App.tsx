@@ -1,5 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import {
+  checkAndInstallUpdate,
+  type UpdateProgress,
+} from "@/lib/desktopUpdater";
 import LandingPage from "@/pages/Landing";
 import LoginPage from "@/pages/Login";
 import RegisterPage from "@/pages/Register";
@@ -15,14 +19,46 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { VoiceSessionRoot } from "@/components/voice/VoiceSessionRoot";
 import { KeybindLayer } from "@/components/settings/KeybindLayer";
 
+const UPDATE_MESSAGES: Record<UpdateProgress["phase"], string | null> = {
+  checking: "Verificando atualizações...",
+  downloading: "Baixando atualização...",
+  installing: "Instalando atualização...",
+  done: "Reiniciando...",
+  none: null,
+  error: null,
+};
+
 export default function App() {
   const bootstrap = useAuthStore((state) => state.bootstrap);
   const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
+  const [update, setUpdate] = useState<UpdateProgress>({ phase: "checking" });
 
   useEffect(() => {
-    bootstrap();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    checkAndInstallUpdate(setUpdate);
   }, []);
+
+  useEffect(() => {
+    // Only start the normal app once we know there's nothing to install —
+    // an update that's about to relaunch the app has no reason to also pay
+    // for a login round trip that's seconds away from being thrown away.
+    if (update.phase === "none" || update.phase === "error") bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [update.phase]);
+
+  const updateMessage = UPDATE_MESSAGES[update.phase];
+  if (updateMessage) {
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-bg-primary">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+        <p className="text-small text-text-secondary">
+          {updateMessage}
+          {update.phase === "downloading" && update.percent != null
+            ? ` ${update.percent}%`
+            : ""}
+        </p>
+      </div>
+    );
+  }
 
   if (isBootstrapping) {
     return (

@@ -19,7 +19,13 @@ import {
   maskInvisible,
   type PublicUser,
 } from '../users/user.presenter';
-import { Permission } from '../common/permissions';
+import {
+  Permission,
+  canAssignRole,
+  canDeleteServer,
+  canManageMember,
+} from '../common/permissions';
+import { ImageStorageService } from '../common/image-storage.service';
 import type { CreateServerDto } from './dto/create-server.dto';
 import type { UpdateServerDto } from './dto/update-server.dto';
 
@@ -37,6 +43,7 @@ export class ServersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly membership: MembershipService,
+    private readonly images: ImageStorageService,
   ) {}
 
   async create(userId: string, dto: CreateServerDto): Promise<Server> {
@@ -85,6 +92,49 @@ export class ServersService {
     return this.prisma.server.update({ where: { id: serverId }, data: dto });
   }
 
+  async saveIcon(
+    serverId: string,
+    userId: string,
+    file: { buffer: Buffer; mimetype: string; size: number },
+  ): Promise<Server> {
+    await this.membership.assertPermission(
+      serverId,
+      userId,
+      Permission.MANAGE_SERVER,
+    );
+    const server = await this.prisma.server.findUnique({
+      where: { id: serverId },
+    });
+    if (!server) throw new NotFoundException('Servidor não encontrado');
+    const iconUrl = await this.images.saveSquare(
+      file,
+      'icons',
+      server.iconUrl,
+      256,
+    );
+    return this.prisma.server.update({
+      where: { id: serverId },
+      data: { iconUrl },
+    });
+  }
+
+  async clearIcon(serverId: string, userId: string): Promise<Server> {
+    await this.membership.assertPermission(
+      serverId,
+      userId,
+      Permission.MANAGE_SERVER,
+    );
+    const server = await this.prisma.server.findUnique({
+      where: { id: serverId },
+    });
+    if (!server) throw new NotFoundException('Servidor não encontrado');
+    this.images.removeStored(server.iconUrl, 'icons');
+    return this.prisma.server.update({
+      where: { id: serverId },
+      data: { iconUrl: null },
+    });
+  }
+
   async join(serverId: string, userId: string): Promise<ServerMember> {
     const server = await this.prisma.server.findUnique({
       where: { id: serverId },
@@ -122,7 +172,7 @@ export class ServersService {
     password: string,
   ): Promise<void> {
     const member = await this.membership.getMembership(serverId, userId);
-    if (member.role !== 'OWNER') {
+    if (!canDeleteServer(member.role)) {
       throw new ForbiddenException('Apenas o dono pode excluir o servidor');
     }
 
@@ -162,17 +212,15 @@ export class ServersService {
     targetUserId: string,
     role: ServerRole,
   ): Promise<ServerMember> {
-    await this.membership.assertPermission(
+    const { actor, target } = await this.membership.assertCanManageMember(
       serverId,
       actingUserId,
+      targetUserId,
       Permission.MANAGE_MEMBERS,
     );
-    const target = await this.prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: targetUserId, serverId } },
-    });
-    if (!target) throw new NotFoundException('Membro não encontrado');
-    if (target.role === 'OWNER')
-      throw new ForbiddenException('Não é possível alterar o dono');
+    if (!canAssignRole(actor.role, role)) {
+      throw new ForbiddenException('Você não pode atribuir este cargo');
+    }
 
     return this.prisma.serverMember.update({
       where: { id: target.id },
@@ -185,20 +233,15 @@ export class ServersService {
     actingUserId: string,
     targetUserId: string,
   ): Promise<void> {
-    await this.membership.assertPermission(
-      serverId,
-      actingUserId,
-      Permission.MANAGE_MEMBERS,
-    );
     if (targetUserId === actingUserId) {
       throw new BadRequestException('Use a opção "Sair" para se remover');
     }
-    const target = await this.prisma.serverMember.findUnique({
-      where: { userId_serverId: { userId: targetUserId, serverId } },
-    });
-    if (!target) throw new NotFoundException('Membro não encontrado');
-    if (target.role === 'OWNER')
-      throw new ForbiddenException('Não é possível remover o dono');
+    const { target } = await this.membership.assertCanManageMember(
+      serverId,
+      actingUserId,
+      targetUserId,
+      Permission.MANAGE_MEMBERS,
+    );
 
     await this.prisma.serverMember.delete({ where: { id: target.id } });
   }
@@ -209,11 +252,6 @@ export class ServersService {
     targetUserId: string,
     reason: string | undefined,
   ): Promise<ServerBan> {
-    await this.membership.assertPermission(
-      serverId,
-      actingUserId,
-      Permission.MANAGE_MEMBERS,
-    );
     if (targetUserId === actingUserId) {
       throw new BadRequestException('Você não pode banir a si mesmo');
     }
@@ -221,8 +259,26 @@ export class ServersService {
     const target = await this.prisma.serverMember.findUnique({
       where: { userId_serverId: { userId: targetUserId, serverId } },
     });
-    if (target?.role === 'OWNER')
-      throw new ForbiddenException('Não é possível banir o dono');
+    if (target) {
+      const actor = await this.membership.assertPermission(
+        serverId,
+        actingUserId,
+        Permission.MANAGE_MEMBERS,
+      );
+      if (!canManageMember(actor.role, target.role)) {
+        throw new ForbiddenException(
+          target.role === 'OWNER'
+            ? 'Não é possível banir o dono'
+            : 'Você não pode gerenciar este membro',
+        );
+      }
+    } else {
+      await this.membership.assertPermission(
+        serverId,
+        actingUserId,
+        Permission.MANAGE_MEMBERS,
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
       if (target) {

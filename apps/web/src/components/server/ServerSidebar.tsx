@@ -5,6 +5,7 @@ import { useServerStore } from "@/stores/useServerStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { cn } from "@/lib/cn";
 import { ApiError } from "@/lib/api";
+import { resolveMediaUrl } from "@/lib/mediaUrl";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { IconButton } from "@/components/ui/IconButton";
 import { CreateServerModal } from "@/components/modal/CreateServerModal";
@@ -30,7 +31,7 @@ export function ServerSidebar() {
   return (
     <nav
       aria-label="Servidores"
-      className="flex h-full w-18 shrink-0 flex-col items-center gap-2 overflow-y-auto bg-bg-secondary py-3"
+      className="flex h-full min-h-0 w-18 shrink-0 flex-col items-center gap-2 overflow-y-auto bg-bg-secondary py-3"
     >
       <Tooltip content="Início" side="right">
         <NavLink
@@ -59,6 +60,7 @@ export function ServerSidebar() {
               id={server.id}
               name={server.name}
               color={server.iconColor}
+              imageUrl={server.iconUrl}
               active={serverId === server.id}
               onSelect={() => {
                 const firstChannel = channels
@@ -115,6 +117,7 @@ interface ServerItemProps {
   id: string;
   name: string;
   color: string;
+  imageUrl: string | null;
   active: boolean;
   onSelect: () => void;
 }
@@ -129,7 +132,8 @@ function IncomingFriendsBadge() {
   );
 }
 
-function ServerItem({ id, name, color, active, onSelect }: ServerItemProps) {
+function ServerItem({ id, name, color, imageUrl, active, onSelect }: ServerItemProps) {
+  const src = resolveMediaUrl(imageUrl);
   return (
     <Tooltip content={name} side="right">
       <button
@@ -138,17 +142,21 @@ function ServerItem({ id, name, color, active, onSelect }: ServerItemProps) {
         aria-current={active}
         data-server-id={id}
         className={cn(
-          "group relative flex h-12 w-12 items-center justify-center text-body font-semibold text-white transition-all duration-150 hover:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+          "group relative flex h-12 w-12 items-center justify-center overflow-hidden text-body font-semibold text-white transition-all duration-150 hover:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
           active ? "rounded-lg" : "rounded-xl",
         )}
         style={{ backgroundColor: color }}
       >
-        {name
-          .split(" ")
-          .slice(0, 2)
-          .map((word) => word[0])
-          .join("")
-          .toUpperCase()}
+        {src ? (
+          <img src={src} alt="" className="h-full w-full object-cover" />
+        ) : (
+          name
+            .split(" ")
+            .slice(0, 2)
+            .map((word) => word[0])
+            .join("")
+            .toUpperCase()
+        )}
       </button>
     </Tooltip>
   );

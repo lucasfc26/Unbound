@@ -79,6 +79,7 @@ export default function InvitePage() {
             <Avatar
               name={preview.server.name}
               color={preview.server.iconColor}
+              imageUrl={preview.server.iconUrl}
               size="xl"
               className="mx-auto mb-4"
             />

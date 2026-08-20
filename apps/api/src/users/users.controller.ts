@@ -20,6 +20,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
+import { imageUploadOptions } from '../common/image-upload';
 
 interface UploadedAvatar {
   buffer: Buffer;
@@ -49,17 +50,13 @@ export class UsersController {
   }
 
   @Post('avatar')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 2 * 1024 * 1024 },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', imageUploadOptions))
   async uploadAvatar(
     @CurrentUser() user: RequestUser,
     @UploadedFile() file?: UploadedAvatar,
   ) {
     if (!file?.buffer?.length) {
-      throw new BadRequestException('Envie uma imagem de até 2 MB');
+      throw new BadRequestException('Envie uma imagem de até 5 MB');
     }
     const updated = await this.users.saveAvatar(user.id, file);
     const withSettings = await this.users.findByIdWithSettings(updated.id);

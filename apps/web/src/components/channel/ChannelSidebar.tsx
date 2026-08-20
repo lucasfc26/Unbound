@@ -21,7 +21,8 @@ import { useToastStore } from "@/stores/useToastStore";
 import { cn } from "@/lib/cn";
 import { ApiError } from "@/lib/api";
 import { avatarColorFor } from "@/lib/avatarColor";
-import { UserArea } from "@/components/user/UserArea";
+import { canManageMember, canOpenServerSettings } from "@/lib/permissions";
+import { useFriendMenuItems } from "@/hooks/useFriendMenuItems";
 import { Avatar } from "@/components/ui/Avatar";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
 import { ContextMenu } from "@/components/ui/ContextMenu";
@@ -46,6 +47,13 @@ export function ChannelSidebar() {
   const leaveServer = useServerStore((state) => state.leaveServer);
   const fetchChannels = useServerStore((state) => state.fetchChannels);
   const fetchMembers = useServerStore((state) => state.fetchMembers);
+  const myRole = useServerStore((state) =>
+    serverId
+      ? state.membersByServer[serverId]?.find(
+          (member) => member.userId === currentUserId,
+        )?.role
+      : undefined,
+  );
   const pushToast = useToastStore((state) => state.push);
   const speakingChannelId = useVoiceStore((state) => state.speakingChannelId);
   const speakingUserId = useVoiceStore((state) => state.speakingUserId);
@@ -104,11 +112,12 @@ export function ChannelSidebar() {
 
   if (!server) {
     return (
-      <aside className="flex h-full w-60 shrink-0 flex-col bg-bg-secondary" />
+      <aside className="flex h-full min-h-0 w-60 shrink-0 flex-col bg-bg-secondary" />
     );
   }
 
   const isOwner = server.ownerId === currentUserId;
+  const canOpenSettings = isOwner || canOpenServerSettings(myRole);
 
   async function handleChannelCreated(input: {
     name: string;
@@ -168,7 +177,7 @@ export function ChannelSidebar() {
   }
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col bg-bg-secondary">
+    <aside className="flex h-full min-h-0 w-60 shrink-0 flex-col bg-bg-secondary">
       <DropdownMenu
         trigger={
           <button className="flex h-12 w-full shrink-0 items-center justify-between border-b border-black/20 px-4 text-body font-semibold text-text-primary shadow-sm hover:bg-hover">
@@ -197,7 +206,7 @@ export function ChannelSidebar() {
             icon: Volume2,
             onSelect: () => setChannelModal({ open: true, type: "VOICE" }),
           },
-          ...(isOwner
+          ...(canOpenSettings
             ? [
                 {
                   label: "Configurações do servidor",
@@ -251,8 +260,6 @@ export function ChannelSidebar() {
         ))}
       </div>
 
-      <UserArea />
-
       <InviteModal
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
@@ -274,7 +281,7 @@ export function ChannelSidebar() {
         onCreate={handleChannelCreated}
       />
 
-      {isOwner && (
+      {canOpenSettings && (
         <ServerSettingsModal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -370,6 +377,7 @@ function ChannelListItem({
   const volumesByUserId = useVoiceStore((state) => state.volumesByUserId);
   const moveMember = useVoiceStore((state) => state.moveMember);
   const allChannels = useServerStore((state) => state.channels);
+  const { itemsFor: friendMenuItems } = useFriendMenuItems();
   const myRole = members?.find((member) => member.userId === currentUserId)
     ?.role;
   const otherVoiceChannels = allChannels.filter(
@@ -420,6 +428,11 @@ function ChannelListItem({
                 <ContextMenu
                   disabled={isSelf}
                   items={[
+                    ...friendMenuItems({
+                      id: entry.userId,
+                      username: member?.user.username,
+                      displayName,
+                    }),
                     {
                       type: "slider",
                       label: "Volume",
@@ -440,7 +453,9 @@ function ChannelListItem({
                         ? "Desmutar para todos"
                         : "Mutar para todos",
                       icon: entry.serverMuted ? Mic : MicOff,
-                      hidden: !canMuteMembers(myRole),
+                      hidden:
+                        !canMuteMembers(myRole) ||
+                        !canManageMember(myRole, member?.role),
                       variant: entry.serverMuted ? "default" : "danger",
                       onSelect: () =>
                         toggleServerMute(
@@ -455,6 +470,7 @@ function ChannelListItem({
                       icon: ArrowRightLeft,
                       hidden:
                         !canMoveMembers(myRole) ||
+                        !canManageMember(myRole, member?.role) ||
                         otherVoiceChannels.length === 0,
                       items: otherVoiceChannels.map((dest) => ({
                         label: dest.name,
@@ -464,7 +480,7 @@ function ChannelListItem({
                     },
                   ]}
                 >
-                  <div className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-hover">
+                  <div className="flex cursor-context-menu items-center gap-2 rounded-md px-1 py-0.5 hover:bg-hover">
                     <Avatar
                       name={displayName}
                       color={color}

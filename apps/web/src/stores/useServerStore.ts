@@ -16,6 +16,8 @@ import {
   listMembers,
   listServers,
   updateServer,
+  uploadServerIcon as apiUploadServerIcon,
+  clearServerIcon as apiClearServerIcon,
   type ApiServer,
   type ApiServerMember,
 } from "@/lib/servers";
@@ -33,6 +35,7 @@ interface CreateServerInput {
   name: string;
   description?: string;
   iconColor?: string;
+  iconFile?: File;
 }
 
 interface UpdateServerInput {
@@ -72,6 +75,8 @@ interface ServerState {
     serverId: string,
     input: UpdateServerInput,
   ) => Promise<void>;
+  uploadServerIcon: (serverId: string, file: File) => Promise<void>;
+  clearServerIcon: (serverId: string) => Promise<void>;
   deleteServer: (serverId: string, password: string) => Promise<void>;
   leaveServer: (serverId: string) => Promise<void>;
   addCategory: (input: CreateCategoryInput) => Promise<ChannelCategory>;
@@ -291,15 +296,38 @@ export const useServerStore = create<ServerState>((set) => {
       }));
     },
 
-    addServer: async ({ name, description, iconColor }) => {
+    addServer: async ({ name, description, iconColor, iconFile }) => {
       const created = await createServer({ name, description, iconColor });
-      const server = toServer(created);
+      const withIcon = iconFile
+        ? await apiUploadServerIcon(created.id, iconFile)
+        : created;
+      const server = toServer(withIcon);
       set((state) => ({ servers: [...state.servers, server] }));
       return server;
     },
 
     updateServerInfo: async (serverId, input) => {
       const updated = await updateServer(serverId, input);
+      const server = toServer(updated);
+      set((state) => ({
+        servers: state.servers.map((item) =>
+          item.id === serverId ? server : item,
+        ),
+      }));
+    },
+
+    uploadServerIcon: async (serverId, file) => {
+      const updated = await apiUploadServerIcon(serverId, file);
+      const server = toServer(updated);
+      set((state) => ({
+        servers: state.servers.map((item) =>
+          item.id === serverId ? server : item,
+        ),
+      }));
+    },
+
+    clearServerIcon: async (serverId) => {
+      const updated = await apiClearServerIcon(serverId);
       const server = toServer(updated);
       set((state) => ({
         servers: state.servers.map((item) =>

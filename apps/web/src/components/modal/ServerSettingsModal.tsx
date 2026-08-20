@@ -1,14 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Settings2, Users, ShieldBan, Trash2 } from "lucide-react";
 import { Modal } from "./Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { useServerStore } from "@/stores/useServerStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { ApiError } from "@/lib/api";
-import { SERVER_COLOR_OPTIONS } from "@/lib/serverColors";
+import { ImageCropDialog } from "@/components/media/ImageCropDialog";
+import { assertImageFile } from "@/lib/imageFile";
 import { avatarColorFor } from "@/lib/avatarColor";
+import {
+  assignableRoles,
+  canDeleteServer,
+  canManageMember,
+  ROLE_LABELS,
+} from "@/lib/permissions";
 import {
   banMember,
   kickMember,
@@ -17,6 +25,7 @@ import {
   updateMemberRole,
   type ApiServerBan,
 } from "@/lib/servers";
+import { SERVER_COLOR_OPTIONS } from "@/lib/serverColors";
 import { cn } from "@/lib/cn";
 import type { Server, ServerRole } from "@/types";
 
@@ -88,13 +97,29 @@ function GeneralTab({
   server: Server;
   onClose: () => void;
 }) {
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const members = useServerStore(
+    (state) => state.membersByServer[server.id] ?? [],
+  );
+  const myRole = members.find((member) => member.userId === currentUserId)
+    ?.role;
+  const showDelete =
+    canDeleteServer(myRole) || server.ownerId === currentUserId;
   const updateServerInfo = useServerStore((state) => state.updateServerInfo);
+  const uploadServerIcon = useServerStore((state) => state.uploadServerIcon);
+  const clearServerIcon = useServerStore((state) => state.clearServerIcon);
   const deleteServer = useServerStore((state) => state.deleteServer);
   const pushToast = useToastStore((state) => state.push);
 
   const [name, setName] = useState(server.name);
   const [description, setDescription] = useState(server.description ?? "");
   const [color, setColor] = useState(server.iconColor);
+  const [iconUrl, setIconUrl] = useState(server.iconUrl);
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [iconPreview, setIconPreview] = useState<string | null>(null);
+  const [cropSource, setCropSource] = useState<File | null>(null);
+  const [removeIcon, setRemoveIcon] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -106,11 +131,25 @@ function GeneralTab({
     if (!name.trim()) return;
     setSaving(true);
     try {
+      if (removeIcon && !iconFile) {
+        await clearServerIcon(server.id);
+        setIconUrl(null);
+      } else if (iconFile) {
+        await uploadServerIcon(server.id, iconFile);
+        setIconFile(null);
+        if (iconPreview) URL.revokeObjectURL(iconPreview);
+        setIconPreview(null);
+        setRemoveIcon(false);
+      }
       await updateServerInfo(server.id, {
         name: name.trim(),
         description: description.trim(),
         iconColor: color,
       });
+      const latest = useServerStore
+        .getState()
+        .servers.find((item) => item.id === server.id);
+      if (latest) setIconUrl(latest.iconUrl);
       pushToast("success", "Configurações salvas");
     } catch (error) {
       pushToast(
@@ -144,11 +183,63 @@ function GeneralTab({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center gap-4">
-        <Avatar name={name || server.name} color={color} size="lg" />
+        <Avatar
+          name={name || server.name}
+          color={color}
+          imageUrl={iconPreview || (removeIcon ? null : iconUrl)}
+          size="lg"
+        />
         <div className="flex-1">
           <p className="mb-1.5 text-small font-medium text-text-secondary">
             Foto do servidor
           </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              try {
+                assertImageFile(file);
+                setCropSource(file);
+              } catch (error) {
+                pushToast(
+                  "error",
+                  error instanceof Error
+                    ? error.message
+                    : "Não foi possível ler essa imagem",
+                );
+              }
+            }}
+          />
+          <div className="mb-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => fileRef.current?.click()}
+            >
+              Enviar foto
+            </Button>
+            {(iconUrl || iconPreview) && !removeIcon && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (iconPreview) URL.revokeObjectURL(iconPreview);
+                  setIconFile(null);
+                  setIconPreview(null);
+                  setRemoveIcon(true);
+                }}
+              >
+                Remover foto
+              </Button>
+            )}
+          </div>
           <div className="flex gap-2">
             {SERVER_COLOR_OPTIONS.map((option) => (
               <button
@@ -166,6 +257,10 @@ function GeneralTab({
               />
             ))}
           </div>
+          <p className="mt-1.5 text-caption text-text-muted">
+            JPG, PNG, WEBP ou GIF de até 5 MB. A cor vale quando não houver
+            foto.
+          </p>
         </div>
       </div>
 
@@ -185,66 +280,83 @@ function GeneralTab({
         {saving ? "Salvando..." : "Salvar alterações"}
       </Button>
 
-      <div className="mt-2 rounded-md border border-danger/30 bg-danger/5 p-4">
-        <h3 className="mb-1 flex items-center gap-2 text-small font-semibold text-danger">
-          <Trash2 className="h-4 w-4" />
-          Excluir servidor
-        </h3>
-        <p className="mb-3 text-caption text-text-muted">
-          Essa ação é permanente e apaga todos os canais e mensagens. Confirme
-          com sua senha.
-        </p>
+      <ImageCropDialog
+        file={cropSource}
+        open={Boolean(cropSource)}
+        title="Recortar ícone do servidor"
+        onCancel={() => setCropSource(null)}
+        onConfirm={(file) => {
+          if (iconPreview) URL.revokeObjectURL(iconPreview);
+          setIconFile(file);
+          setIconPreview(URL.createObjectURL(file));
+          setRemoveIcon(false);
+          setCropSource(null);
+        }}
+      />
 
-        {!confirmingDelete ? (
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => setConfirmingDelete(true)}
-          >
+      {showDelete && (
+        <div className="mt-2 rounded-md border border-danger/30 bg-danger/5 p-4">
+          <h3 className="mb-1 flex items-center gap-2 text-small font-semibold text-danger">
+            <Trash2 className="h-4 w-4" />
             Excluir servidor
-          </Button>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <Input
-              type="password"
-              label="Sua senha"
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setDeleteError(null);
-              }}
-              error={deleteError ?? undefined}
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setConfirmingDelete(false);
-                  setPassword("");
+          </h3>
+          <p className="mb-3 text-caption text-text-muted">
+            Essa ação é permanente e apaga todos os canais e mensagens. Confirme
+            com sua senha.
+          </p>
+
+          {!confirmingDelete ? (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              Excluir servidor
+            </Button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Input
+                type="password"
+                label="Sua senha"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
                   setDeleteError(null);
                 }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={handleDelete}
-                disabled={deleting || !password}
-              >
-                {deleting ? "Excluindo..." : "Excluir permanentemente"}
-              </Button>
+                error={deleteError ?? undefined}
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setConfirmingDelete(false);
+                    setPassword("");
+                    setDeleteError(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={handleDelete}
+                  disabled={deleting || !password}
+                >
+                  {deleting ? "Excluindo..." : "Excluir permanentemente"}
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function MembersTab({ server }: { server: Server }) {
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const membersByServer = useServerStore((state) => state.membersByServer);
   const fetchMembers = useServerStore((state) => state.fetchMembers);
   const pushToast = useToastStore((state) => state.push);
@@ -257,6 +369,9 @@ function MembersTab({ server }: { server: Server }) {
   }, [server.id, fetchMembers]);
 
   const members = membersByServer[server.id] ?? [];
+  const myRole = members.find((member) => member.userId === currentUserId)
+    ?.role;
+  const roleOptions = assignableRoles(myRole);
 
   async function handleRoleChange(userId: string, role: ServerRole) {
     setBusyUserId(userId);
@@ -348,11 +463,8 @@ function MembersTab({ server }: { server: Server }) {
             </p>
           </div>
 
-          {member.role === "OWNER" ? (
-            <span className="rounded-full bg-accent/15 px-2.5 py-1 text-caption font-medium text-accent">
-              Dono
-            </span>
-          ) : (
+          {member.userId !== currentUserId &&
+          canManageMember(myRole, member.role) ? (
             <div className="flex items-center gap-1.5">
               <select
                 value={member.role}
@@ -365,9 +477,11 @@ function MembersTab({ server }: { server: Server }) {
                 }
                 className="h-8 rounded-md border border-border bg-surface px-2 text-caption text-text-primary outline-none focus:border-accent"
               >
-                <option value="ADMIN">Administrador</option>
-                <option value="MODERATOR">Moderador</option>
-                <option value="MEMBER">Membro</option>
+                {roleOptions.map((role) => (
+                  <option key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </option>
+                ))}
               </select>
               <Button
                 variant="secondary"
@@ -386,6 +500,10 @@ function MembersTab({ server }: { server: Server }) {
                 Banir
               </Button>
             </div>
+          ) : (
+            <span className="rounded-full bg-accent/15 px-2.5 py-1 text-caption font-medium text-accent">
+              {ROLE_LABELS[member.role]}
+            </span>
           )}
         </li>
       ))}

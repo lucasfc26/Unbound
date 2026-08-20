@@ -15,6 +15,8 @@ interface ModalProps {
   /** Panel width. Only one max-w-* class is ever applied — never combine with className to avoid Tailwind cascade-order bugs. */
   size?: "sm" | "md" | "lg" | "xl";
   className?: string;
+  /** Sit above another open modal (crop picker inside settings, etc). */
+  nested?: boolean;
 }
 
 const SIZE_CLASSES: Record<NonNullable<ModalProps["size"]>, string> = {
@@ -34,6 +36,7 @@ export function Modal({
   closeOnOverlayClick = true,
   size = "md",
   className,
+  nested = false,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -47,14 +50,16 @@ export function Modal({
     panelRef.current?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCloseRef.current();
+      if (event.key !== "Escape") return;
+      if (nested) event.stopImmediatePropagation();
+      onCloseRef.current();
     };
 
-    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, nested);
     document.body.style.overflow = "hidden";
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown, nested);
       document.body.style.overflow = "";
       previouslyFocused.current?.focus();
     };
@@ -67,7 +72,10 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in"
+      className={cn(
+        "fixed inset-0 flex items-center justify-center bg-black/60 p-4 animate-fade-in",
+        nested ? "z-[70]" : "z-50",
+      )}
       onMouseDown={(event) => {
         if (closeOnOverlayClick && event.target === event.currentTarget)
           onClose();

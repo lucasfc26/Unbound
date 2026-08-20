@@ -5,8 +5,9 @@ import {
   useFriendsStore,
   type FriendEntry,
 } from "@/stores/useFriendsStore";
-import { UserArea } from "@/components/user/UserArea";
 import { Avatar } from "@/components/ui/Avatar";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { useFriendMenuItems } from "@/hooks/useFriendMenuItems";
 import { statusLabels } from "@/lib/status";
 
 export function FriendsSidebar() {
@@ -29,7 +30,7 @@ export function FriendsSidebar() {
   );
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col bg-bg-secondary">
+    <aside className="flex h-full min-h-0 w-60 shrink-0 flex-col bg-bg-secondary">
       <NavLink
         to="/app/friends"
         className="flex h-12 shrink-0 items-center gap-2 border-b border-black/20 px-4 text-body font-semibold text-text-primary hover:bg-hover"
@@ -47,8 +48,6 @@ export function FriendsSidebar() {
         <FriendGroup label={`Online — ${online.length}`} entries={online} />
         <FriendGroup label={`Offline — ${offline.length}`} entries={offline} />
       </div>
-
-      <UserArea />
     </aside>
   );
 }
@@ -60,6 +59,7 @@ function FriendGroup({
   label: string;
   entries: FriendEntry[];
 }) {
+  const { itemsFor } = useFriendMenuItems();
   if (entries.length === 0) return null;
   return (
     <div className="mb-3">
@@ -69,23 +69,25 @@ function FriendGroup({
       <ul className="flex flex-col gap-1">
         {entries.map((entry) => (
           <li key={entry.user.id}>
-            <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5">
-              <Avatar
-                name={entry.user.displayName}
-                color={entry.user.avatarColor}
-                imageUrl={entry.user.avatarUrl}
-                status={entry.user.status}
-                size="sm"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-small font-medium text-text-primary">
-                  {entry.user.displayName}
+            <ContextMenu items={itemsFor(entry.user)}>
+              <div className="flex cursor-context-menu items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-hover">
+                <Avatar
+                  name={entry.user.displayName}
+                  color={entry.user.avatarColor}
+                  imageUrl={entry.user.avatarUrl}
+                  status={entry.user.status}
+                  size="sm"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-small font-medium text-text-primary">
+                    {entry.user.displayName}
+                  </span>
+                  <span className="block truncate text-caption text-text-muted">
+                    {entry.user.customStatus ?? statusLabels[entry.user.status]}
+                  </span>
                 </span>
-                <span className="block truncate text-caption text-text-muted">
-                  {entry.user.customStatus ?? statusLabels[entry.user.status]}
-                </span>
-              </span>
-            </div>
+              </div>
+            </ContextMenu>
           </li>
         ))}
       </ul>

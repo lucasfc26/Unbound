@@ -1,5 +1,15 @@
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
+/**
+ * The public web origin — used for links meant to be opened by someone else
+ * (invite links, etc). `window.location.origin` is wrong for this under
+ * Tauri: it resolves to `http://tauri.localhost`, which only means anything
+ * inside that one desktop window. Falls back to the browser's own origin
+ * when unset, which keeps plain-web/local dev working without config.
+ */
+export const PUBLIC_APP_URL =
+  import.meta.env.VITE_PUBLIC_APP_URL ?? window.location.origin;
+
 export class ApiError extends Error {
   constructor(
     public status: number,

@@ -30,3 +30,5 @@ apps/web/public/downloads/*.AppImage
 apps/web/public/downloads/*.deb
 
 *.tsbuildinfo
+
+privatekey.key

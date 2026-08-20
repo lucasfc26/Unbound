@@ -1,6 +1,5 @@
 import { IsIn } from 'class-validator';
-
-const ASSIGNABLE_ROLES = ['ADMIN', 'MODERATOR', 'MEMBER'] as const;
+import { ASSIGNABLE_ROLES } from '../../common/permissions';
 
 export class UpdateMemberRoleDto {
   @IsIn(ASSIGNABLE_ROLES)

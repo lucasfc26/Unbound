@@ -4,12 +4,18 @@ import { apiFetch, setAccessToken } from "@/lib/api";
 import { avatarColorFor } from "@/lib/avatarColor";
 import { getSocket } from "@/lib/socket";
 import type { ApiPrivateUser } from "@/lib/account";
+import {
+  saveDesktopSession,
+  loadDesktopSession,
+  clearDesktopSession,
+} from "@/lib/desktopSession";
 
 type ApiUser = ApiPrivateUser;
 
 interface AuthResponse {
   user: ApiUser;
   accessToken: string;
+  refreshToken: string;
 }
 
 export interface RegisterInput {
@@ -64,6 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           method: "POST",
         });
         setAccessToken(data.accessToken);
+        await saveDesktopSession(data.refreshToken);
         getSocket().connect();
         set({
           user: toUser(data.user),
@@ -71,8 +78,34 @@ export const useAuthStore = create<AuthState>((set, get) => {
           isBootstrapping: false,
         });
       } catch {
-        setAccessToken(null);
-        set({ user: null, isAuthenticated: false, isBootstrapping: false });
+        // The refresh_token cookie is either missing or invalid — on
+        // desktop, fall back to whatever this app itself saved (WebView2
+        // not always surviving a full app restart is exactly what this
+        // covers). Plain web has no fallback store, so this is a no-op there.
+        const stored = await loadDesktopSession();
+        if (!stored) {
+          setAccessToken(null);
+          set({ user: null, isAuthenticated: false, isBootstrapping: false });
+          return;
+        }
+        try {
+          const data = await apiFetch<AuthResponse>("/auth/refresh", {
+            method: "POST",
+            body: { refreshToken: stored },
+          });
+          setAccessToken(data.accessToken);
+          await saveDesktopSession(data.refreshToken);
+          getSocket().connect();
+          set({
+            user: toUser(data.user),
+            isAuthenticated: true,
+            isBootstrapping: false,
+          });
+        } catch {
+          await clearDesktopSession();
+          setAccessToken(null);
+          set({ user: null, isAuthenticated: false, isBootstrapping: false });
+        }
       }
     },
 
@@ -82,6 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         body: { identifier, password },
       });
       setAccessToken(data.accessToken);
+      await saveDesktopSession(data.refreshToken);
       getSocket().connect();
       set({ user: toUser(data.user), isAuthenticated: true });
     },
@@ -92,6 +126,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         body: input,
       });
       setAccessToken(data.accessToken);
+      await saveDesktopSession(data.refreshToken);
       getSocket().connect();
       set({ user: toUser(data.user), isAuthenticated: true });
     },
@@ -102,6 +137,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       } finally {
         getSocket().disconnect();
         setAccessToken(null);
+        await clearDesktopSession();
         set({ user: null, isAuthenticated: false });
       }
     },
@@ -119,6 +155,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     clearSession: () => {
       getSocket().disconnect();
       setAccessToken(null);
+      clearDesktopSession().catch(() => {});
       set({ user: null, isAuthenticated: false });
     },
   };

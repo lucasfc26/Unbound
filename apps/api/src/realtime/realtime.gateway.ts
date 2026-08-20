@@ -305,7 +305,11 @@ export class RealtimeGateway
       destinationChannelId: string;
     },
   ) {
-    await this.voice.assertCanMoveMembers(data.channelId, client.data.user.id);
+    await this.voice.assertCanMoveMembers(
+      data.channelId,
+      client.data.user.id,
+      data.targetUserId,
+    );
     const { participant, from, to } = await this.voice.moveParticipant(
       data.channelId,
       data.destinationChannelId,
@@ -344,7 +348,11 @@ export class RealtimeGateway
     @MessageBody()
     data: { channelId: string; targetUserId: string; muted: boolean },
   ) {
-    await this.voice.assertCanMuteMembers(data.channelId, client.data.user.id);
+    await this.voice.assertCanMuteMembers(
+      data.channelId,
+      client.data.user.id,
+      data.targetUserId,
+    );
     this.voice.setServerMute(data.channelId, data.targetUserId, data.muted);
     this.server.emit('voice:server_mute', {
       channelId: data.channelId,

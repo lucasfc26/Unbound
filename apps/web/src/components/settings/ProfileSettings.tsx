@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { ImageCropDialog } from "@/components/media/ImageCropDialog";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { updateProfile, uploadAvatar } from "@/lib/account";
+import { assertImageFile } from "@/lib/imageFile";
 import { ApiError } from "@/lib/api";
 
 export function ProfileSettings() {
@@ -20,6 +22,7 @@ export function ProfileSettings() {
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? "");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [cropSource, setCropSource] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [pronouns, setPronouns] = useState("");
   const [customStatus, setCustomStatus] = useState("");
@@ -39,22 +42,31 @@ export function ProfileSettings() {
     }
   }, [settings]);
 
+  function applyCrop(file: File) {
+    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+    setCropSource(null);
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (saving || !user) return;
     setSaving(true);
     try {
-      if (avatarFile) {
-        const uploaded = await uploadAvatar(avatarFile);
+      const cropped = avatarFile;
+      if (cropped) {
+        const uploaded = await uploadAvatar(cropped);
         updateUser(uploaded);
         setAvatarUrl(uploaded.avatarUrl ?? "");
         setAvatarFile(null);
+        if (avatarPreview) URL.revokeObjectURL(avatarPreview);
         setAvatarPreview(null);
       }
       const [updatedUser] = await Promise.all([
         updateProfile({
           displayName: displayName.trim(),
-          avatarUrl: avatarFile ? undefined : avatarUrl.trim(),
+          avatarUrl: cropped ? undefined : avatarUrl.trim(),
         }),
         updateSettings({
           pronouns: pronouns.trim(),
@@ -96,17 +108,20 @@ export function ProfileSettings() {
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
-              onChange={async (event) => {
+              onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = "";
                 if (!file) return;
                 try {
-                  const prepared = await prepareAvatarFile(file);
-                  if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-                  setAvatarFile(prepared);
-                  setAvatarPreview(URL.createObjectURL(prepared));
-                } catch {
-                  pushToast("error", "Não foi possível ler essa imagem");
+                  assertImageFile(file);
+                  setCropSource(file);
+                } catch (error) {
+                  pushToast(
+                    "error",
+                    error instanceof Error
+                      ? error.message
+                      : "Não foi possível ler essa imagem",
+                  );
                 }
               }}
             />
@@ -136,8 +151,8 @@ export function ProfileSettings() {
               )}
             </div>
             <p className="mt-1.5 text-caption text-text-muted">
-              JPG, PNG, WEBP ou GIF de até 2 MB. A foto é salva com as outras
-              alterações do perfil.
+              JPG, PNG, WEBP ou GIF de até 5 MB. Você escolhe o recorte antes
+              de salvar.
             </p>
           </div>
         </div>
@@ -184,28 +199,14 @@ export function ProfileSettings() {
           {saving ? "Salvando..." : "Salvar alterações"}
         </Button>
       </form>
+
+      <ImageCropDialog
+        file={cropSource}
+        open={Boolean(cropSource)}
+        title="Recortar foto de perfil"
+        onCancel={() => setCropSource(null)}
+        onConfirm={applyCrop}
+      />
     </div>
   );
-}
-
-async function prepareAvatarFile(file: File): Promise<File> {
-  if (file.size > 2 * 1024 * 1024) {
-    throw new Error("too large");
-  }
-  const bitmap = await createImageBitmap(file);
-  const size = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return file;
-  const scale = Math.max(size / bitmap.width, size / bitmap.height);
-  const width = bitmap.width * scale;
-  const height = bitmap.height * scale;
-  ctx.drawImage(bitmap, (size - width) / 2, (size - height) / 2, width, height);
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.9),
-  );
-  if (!blob) return file;
-  return new File([blob], "avatar.jpg", { type: "image/jpeg" });
 }

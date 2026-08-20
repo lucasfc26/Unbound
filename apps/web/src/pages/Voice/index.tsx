@@ -5,7 +5,6 @@ import { useServerStore } from "@/stores/useServerStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { avatarColorFor } from "@/lib/avatarColor";
-import { ChannelSidebar } from "@/components/channel/ChannelSidebar";
 import { VoiceParticipantGrid } from "@/components/voice/VoiceParticipantGrid";
 import { VoiceControls } from "@/components/voice/VoiceControls";
 import { VoiceChatPanel } from "@/components/voice/VoiceChatPanel";
@@ -76,11 +75,8 @@ export default function VoicePage() {
 
   if (!server || !channel) {
     return (
-      <div className="flex flex-1">
-        <ChannelSidebar />
-        <div className="flex flex-1 items-center justify-center bg-bg-primary text-text-secondary">
-          Sala de voz não encontrada.
-        </div>
+      <div className="flex min-w-0 flex-1 items-center justify-center bg-bg-primary text-text-secondary">
+        Sala de voz não encontrada.
       </div>
     );
   }
@@ -128,9 +124,7 @@ export default function VoicePage() {
   ];
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <ChannelSidebar />
-
+    <div className="flex min-w-0 flex-1 overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-black/20 px-4 shadow-sm">
           <Volume2 className="h-5 w-5 text-text-secondary" />
