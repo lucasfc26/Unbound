@@ -8,6 +8,11 @@ import type {
   ThemePreference,
   DensityPreference,
   UserSettings,
+  MediaProfile,
+  BroadcastMode,
+  BroadcastResolution,
+  BroadcastCodec,
+  BroadcastTransport,
 } from "@/types";
 
 export interface ApiUserSettings {
@@ -27,6 +32,12 @@ export interface ApiUserSettings {
   noiseGate: number;
   pushToTalkEnabled: boolean;
   keybinds: unknown;
+  mediaProfile: MediaProfile;
+  broadcastMode: BroadcastMode;
+  broadcastResolution: BroadcastResolution;
+  broadcastMaxBitrateKbps: number;
+  broadcastCodec: BroadcastCodec;
+  broadcastTransport: BroadcastTransport;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,6 +58,12 @@ export interface UpdateUserSettingsInput {
   noiseGate?: number;
   pushToTalkEnabled?: boolean;
   keybinds?: Partial<Record<KeybindAction, Keybind | null>>;
+  mediaProfile?: MediaProfile;
+  broadcastMode?: BroadcastMode;
+  broadcastResolution?: BroadcastResolution;
+  broadcastMaxBitrateKbps?: number;
+  broadcastCodec?: BroadcastCodec;
+  broadcastTransport?: BroadcastTransport;
 }
 
 function parseKeybinds(
@@ -81,6 +98,20 @@ export function toUserSettings(api: ApiUserSettings): UserSettings {
     noiseGate: api.noiseGate ?? 40,
     pushToTalkEnabled: Boolean(api.pushToTalkEnabled),
     keybinds: parseKeybinds(api.keybinds),
+    mediaProfile: api.mediaProfile === "gaming" ? "gaming" : "quality",
+    broadcastMode: api.broadcastMode === "manual" ? "manual" : "auto",
+    broadcastResolution: ["480p", "720p", "1080p", "native"].includes(
+      api.broadcastResolution,
+    )
+      ? api.broadcastResolution
+      : "720p",
+    broadcastMaxBitrateKbps: api.broadcastMaxBitrateKbps ?? 2000,
+    broadcastCodec: ["auto", "vp8", "vp9", "h264"].includes(api.broadcastCodec)
+      ? api.broadcastCodec
+      : "auto",
+    broadcastTransport: ["auto", "p2p", "sfu"].includes(api.broadcastTransport)
+      ? api.broadcastTransport
+      : "auto",
   };
 }
 

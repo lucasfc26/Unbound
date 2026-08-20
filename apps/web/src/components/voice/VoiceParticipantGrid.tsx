@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Cable,
   EyeOff,
   Maximize,
   Maximize2,
@@ -28,6 +29,7 @@ interface Participant {
   connectionState?: RTCPeerConnectionState;
   sharingScreen?: boolean;
   screenStream?: MediaStream | null;
+  screenTransport?: "p2p" | "sfu" | null;
 }
 
 interface VoiceParticipantGridProps {
@@ -74,6 +76,7 @@ export function VoiceParticipantGrid({
         <ScreenShareStage
           displayName={watched.user.displayName}
           stream={watched.screenStream}
+          transport={watched.screenTransport ?? "sfu"}
           isLocal={Boolean(watched.isLocal)}
           showCards={showWatchingCards}
           onToggleCards={() => setShowWatchingCards((value) => !value)}
@@ -139,6 +142,7 @@ function pipSupported(): boolean {
 function ScreenShareStage({
   displayName,
   stream,
+  transport,
   isLocal,
   showCards,
   onToggleCards,
@@ -147,6 +151,7 @@ function ScreenShareStage({
 }: {
   displayName: string;
   stream: MediaStream;
+  transport: "p2p" | "sfu";
   isLocal: boolean;
   showCards: boolean;
   onToggleCards: () => void;
@@ -301,12 +306,22 @@ function ScreenShareStage({
           muted
           className="h-full w-full bg-black object-contain"
         />
-        {/* Compartilhamento de tela sempre passa pelo SFU (mediasoup) — só
-            áudio/câmera usam o mesh P2P, ver RTCHIBRIDO.mp. */}
+        {/* Transmissão de tela vai pelo SFU por padrão; Configurações >
+            Transmissão > Manual > Transporte pode forçar P2P direto — ver
+            RTCHIBRIDO.mp e mediaProfiles.ts. */}
         <span className="absolute right-2 top-2 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-caption font-medium text-text-primary">
-          <Server className="h-3 w-3" />
-          Via servidor (SFU)
-          {isLocal && (
+          {transport === "p2p" ? (
+            <>
+              <Cable className="h-3 w-3" />
+              Direto (P2P)
+            </>
+          ) : (
+            <>
+              <Server className="h-3 w-3" />
+              Via servidor (SFU)
+            </>
+          )}
+          {isLocal && transport === "sfu" && (
             <span className="border-l border-white/20 pl-1">
               {viewerCount === 0
                 ? "ninguém assistindo"

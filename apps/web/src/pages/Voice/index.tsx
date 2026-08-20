@@ -40,6 +40,7 @@ export default function VoicePage() {
   const cameraEnabled = useVoiceStore((state) => state.cameraEnabled);
   const screenSharing = useVoiceStore((state) => state.screenSharing);
   const screenStream = useVoiceStore((state) => state.screenStream);
+  const screenTransport = useVoiceStore((state) => state.screenTransport);
   const stopScreenShare = useVoiceStore((state) => state.stopScreenShare);
   const remoteParticipants = useVoiceStore((state) => state.remoteParticipants);
   const speakingChannelId = useVoiceStore((state) => state.speakingChannelId);
@@ -98,6 +99,7 @@ export default function VoicePage() {
             connectionState: "connected" as RTCPeerConnectionState,
             sharingScreen: screenSharing,
             screenStream: screenSharing ? screenStream : null,
+            screenTransport: screenSharing ? screenTransport : null,
           },
         ]
       : []),
@@ -120,6 +122,7 @@ export default function VoicePage() {
       connectionState: participant.connectionState,
       sharingScreen: participant.sharingScreen,
       screenStream: participant.screenStream,
+      screenTransport: participant.screenTransport,
     })),
   ];
 

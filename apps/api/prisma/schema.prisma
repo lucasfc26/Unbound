@@ -110,6 +110,15 @@ model UserSettings {
   pushToTalkEnabled     Boolean @default(false)
   keybinds              Json?
 
+  // Transmissão — perfil de mídia (codecs/bitrate de mic, câmera e tela) e
+  // controle manual do compartilhamento de tela quando broadcastMode = "manual".
+  mediaProfile            String @default("quality")
+  broadcastMode           String @default("auto")
+  broadcastResolution     String @default("720p")
+  broadcastMaxBitrateKbps Int    @default(2000)
+  broadcastCodec          String @default("auto")
+  broadcastTransport      String @default("auto")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

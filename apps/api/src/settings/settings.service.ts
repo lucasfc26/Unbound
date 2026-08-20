@@ -23,6 +23,12 @@ const DEFAULTS = {
   noiseSuppressionMode: 'auto',
   noiseGate: 40,
   pushToTalkEnabled: false,
+  mediaProfile: 'quality',
+  broadcastMode: 'auto',
+  broadcastResolution: '720p',
+  broadcastMaxBitrateKbps: 2000,
+  broadcastCodec: 'auto',
+  broadcastTransport: 'auto',
 };
 
 function normalize(

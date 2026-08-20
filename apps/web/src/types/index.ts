@@ -21,6 +21,12 @@ export type FriendRequestPrivacy = "EVERYONE" | "NOBODY";
 
 export type NoiseSuppressionMode = "auto" | "manual";
 
+export type MediaProfile = "quality" | "gaming";
+export type BroadcastMode = "auto" | "manual";
+export type BroadcastResolution = "480p" | "720p" | "1080p" | "native";
+export type BroadcastCodec = "auto" | "vp8" | "vp9" | "h264";
+export type BroadcastTransport = "auto" | "p2p" | "sfu";
+
 export interface Keybind {
   code: string;
   ctrl: boolean;
@@ -58,6 +64,12 @@ export interface UserSettings {
   noiseGate: number;
   pushToTalkEnabled: boolean;
   keybinds: Partial<Record<KeybindAction, Keybind | null>>;
+  mediaProfile: MediaProfile;
+  broadcastMode: BroadcastMode;
+  broadcastResolution: BroadcastResolution;
+  broadcastMaxBitrateKbps: number;
+  broadcastCodec: BroadcastCodec;
+  broadcastTransport: BroadcastTransport;
 }
 
 export type ServerRole = "OWNER" | "ADMIN" | "MODERATOR" | "MEMBER";

@@ -19,6 +19,14 @@ import {
   getVoicePipeline,
 } from "@/lib/voicePipeline";
 import { loadUserVolumes, saveUserVolumes } from "@/lib/userVolumes";
+import {
+  DEFAULT_BROADCAST_SETTINGS,
+  resolveCameraSenderParams,
+  resolveMicSenderParams,
+  resolveP2pVideoCodecPreferences,
+  resolveScreenShareEncodings,
+  resolveSfuVideoCodec,
+} from "@/lib/mediaProfiles";
 
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -34,21 +42,17 @@ const SPEAKING_THRESHOLD = 12;
  */
 let iceServers: RTCIceServer[] = DEFAULT_ICE_SERVERS;
 
-/**
- * RTCHIBRIDO.mp Parte 5/6 — Qualidade adaptativa / Simulcast. Three spatial
- * layers published for every screen share; mediasoup's bandwidth estimation
- * then hands each viewer whichever layer fits their downlink (poor -> r0,
- * excellent -> r2) without us tracking connection quality client-side.
- * Targets match the doc's reference table (~360p/540p/720p).
- */
-const SCREEN_SHARE_ENCODINGS: RTCRtpEncodingParameters[] = [
-  { rid: "r0", scaleResolutionDownBy: 4, maxBitrate: 500_000, maxFramerate: 20 },
-  { rid: "r1", scaleResolutionDownBy: 2, maxBitrate: 1_000_000, maxFramerate: 30 },
-  { rid: "r2", scaleResolutionDownBy: 1, maxBitrate: 2_000_000, maxFramerate: 30 },
-];
+/** Current broadcast/media-profile settings, falling back to defaults if Settings was never opened this session (mirrors the `settings?.field ?? default` pattern used for noise suppression/PTT below). */
+function broadcastSettings() {
+  return useSettingsStore.getState().settings ?? DEFAULT_BROADCAST_SETTINGS;
+}
 
 /**
- * Screen share ("transmissão") goes through the SFU — mic/camera stay on the P2P mesh above.
+ * Screen share ("transmissão") normally goes through the SFU — mic/camera
+ * stay on the P2P mesh above — but Transmissão > Manual > Transporte lets
+ * the user force screen share onto the P2P mesh too (`p2pScreenStream`
+ * below). Resolutions/bitrate/codec for both paths come from
+ * `@/lib/mediaProfiles`, driven by the Transmissão + Perfil de mídia settings.
  * Uses socket.io's ack timeout so a server-side exception (which arrives as a separate
  * 'error' event, not as the ack) actually rejects instead of hanging the caller forever.
  */
@@ -72,6 +76,8 @@ export interface RemoteParticipant {
   sharingScreen: boolean;
   /** Producers available to subscribe to, independent of whether anyone's watching yet. */
   screenProducers: { producerId: string; kind: MsTypes.MediaKind }[];
+  /** How their screen share reaches us — "sfu" needs an explicit watchScreen() subscribe, "p2p" arrives on its own via the mesh. `null` when not sharing. */
+  screenTransport: "p2p" | "sfu" | null;
 }
 
 export interface VoiceRosterEntry {
@@ -99,7 +105,9 @@ interface VoiceState {
   cameraEnabled: boolean;
   screenSharing: boolean;
   screenStream: MediaStream | null;
-  /** How many people are actively watching your own screen share right now (RTCHIBRIDO.mp Parte 4). */
+  /** How our own screen share is being sent — "sfu" (default) or "p2p" (Transmissão > Manual). `null` when not sharing. Viewer-count tracking below only applies to "sfu". */
+  screenTransport: "p2p" | "sfu" | null;
+  /** How many people are actively watching your own screen share right now (RTCHIBRIDO.mp Parte 4). Only meaningful for the SFU transport — P2P has no server-side viewer tracking. */
   screenViewerCount: number;
   remoteParticipants: Record<string, RemoteParticipant>;
   serverPingMs: number | null;
@@ -167,6 +175,56 @@ let micEnabledBeforeDeafen = true;
 /** Whose screen we're actively subscribed to right now — at most one at a time (RTCHIBRIDO.mp Parte 3). */
 let watchingUserId: string | null = null;
 
+/**
+ * Our own screen-share tracks when Transmissão > Manual > Transporte = P2P —
+ * bypasses the SFU entirely, added directly to every peer in `peers`
+ * (mirroring how the camera track is added, see `toggleCamera`). Kept at
+ * module scope so `createPeerConnection` can also attach it to peers that
+ * connect *after* the share already started. `null` whenever we're not
+ * P2P-sharing (including when sharing via the SFU instead).
+ */
+let p2pScreenStream: MediaStream | null = null;
+
+/** Applies the mic bitrate cap from the active media profile to a freshly-added audio sender. */
+function applyMicSenderParams(sender: RTCRtpSender) {
+  const { maxBitrate } = resolveMicSenderParams(broadcastSettings());
+  const params = sender.getParameters();
+  const encoding = params.encodings?.[0] ?? {};
+  params.encodings = [{ ...encoding, maxBitrate }];
+  sender.setParameters(params).catch(() => {});
+}
+
+/** Applies the camera bitrate/framerate cap from the active media profile to a freshly-added video sender. */
+function applyCameraSenderParams(sender: RTCRtpSender) {
+  const { maxBitrate, maxFramerate } = resolveCameraSenderParams(broadcastSettings());
+  const params = sender.getParameters();
+  const encoding = params.encodings?.[0] ?? {};
+  params.encodings = [{ ...encoding, maxBitrate, maxFramerate }];
+  sender.setParameters(params).catch(() => {});
+}
+
+/** Applies Transmissão settings (resolution/bitrate/codec) to a P2P-mesh screen-share track. */
+function applyP2pScreenSenderParams(pc: RTCPeerConnection, track: MediaStreamTrack) {
+  const settings = broadcastSettings();
+  const sender = pc.getSenders().find((s) => s.track === track);
+  if (!sender) return;
+
+  const params = sender.getParameters();
+  params.encodings = resolveScreenShareEncodings(settings, track.getSettings().height);
+  sender.setParameters(params).catch(() => {});
+
+  const codecPreferences = resolveP2pVideoCodecPreferences(settings);
+  const transceiver = pc.getTransceivers().find((t) => t.sender === sender);
+  if (codecPreferences && transceiver?.setCodecPreferences) {
+    try {
+      transceiver.setCodecPreferences(codecPreferences);
+    } catch {
+      // Browser rejected the list (e.g. missing a codec it already
+      // negotiated) — falls back to the default order, not fatal.
+    }
+  }
+}
+
 function emptyParticipant(
   userId: string,
   displayName: string,
@@ -182,6 +240,7 @@ function emptyParticipant(
     screenStream: null,
     sharingScreen: false,
     screenProducers: [],
+    screenTransport: null,
     ...extras,
   };
 }
@@ -516,6 +575,7 @@ async function consumeProducer(
             // video track arrives after audio (same object would stay black).
             screenStream: new MediaStream(tracks),
             sharingScreen: true,
+            screenTransport: "sfu",
           },
         },
       };
@@ -549,6 +609,7 @@ async function catchUpOnScreenShares(channelId: string, set: SetFn) {
         [producer.userId]: {
           ...existing,
           sharingScreen: true,
+          screenTransport: "sfu",
           screenProducers: [
             ...existing.screenProducers,
             { producerId: producer.producerId, kind: producer.kind },
@@ -585,6 +646,7 @@ function onSfuProducerClosed(userId: string, producerId: string, set: SetFn) {
           sharingScreen: stillSharing,
           screenProducers,
           screenStream: stillSharing ? existing.screenStream : null,
+          screenTransport: stillSharing ? "sfu" : null,
         },
       },
     };
@@ -642,7 +704,23 @@ function createPeerConnection(
 ): RTCPeerConnection {
   const socket = getSocket();
   const pc = new RTCPeerConnection({ iceServers });
-  localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+  localStream.getTracks().forEach((track) => {
+    const sender = pc.addTrack(track, localStream);
+    // Camera can already be on `localStream` here (e.g. reconnecting after
+    // voice:moved with the camera still enabled), not just via toggleCamera.
+    if (track.kind === "audio") applyMicSenderParams(sender);
+    else if (track.kind === "video") applyCameraSenderParams(sender);
+  });
+
+  // We may already be P2P-sharing our screen when a peer connects after us
+  // (e.g. they just joined the channel) — attach it here too, same as above.
+  if (p2pScreenStream) {
+    const screenStream = p2pScreenStream;
+    screenStream.getTracks().forEach((track) => {
+      pc.addTrack(track, screenStream);
+      applyP2pScreenSenderParams(pc, track);
+    });
+  }
 
   pc.onicecandidate = (event) => {
     if (!event.candidate) return;
@@ -779,6 +857,7 @@ async function performRealJoin(
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
+    screenTransport: null,
     screenViewerCount: 0,
     remoteParticipants: {},
     serverMuted: false,
@@ -1162,6 +1241,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             [userId]: {
               ...existing,
               sharingScreen: true,
+              screenTransport: "sfu",
               screenProducers: [
                 ...existing.screenProducers,
                 { producerId, kind },
@@ -1177,6 +1257,48 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (watchingUserId === userId) {
         consumeProducer(channelId, producerId, userId, set).catch(() => {});
       }
+    },
+  );
+
+  // Transmissão > Manual > Transporte = P2P: no SFU producer to announce,
+  // so the sharer just tells the room directly. The actual video arrives
+  // over the P2P mesh itself (ontrack in createPeerConnection routes it
+  // into screenStream since it's a second, non-primary stream) — this only
+  // flips the "sharingScreen" flag the UI gates the watch affordance on.
+  socket.on(
+    "voice:screen_share_state",
+    ({
+      channelId,
+      userId,
+      sharing,
+    }: {
+      channelId: string;
+      userId: string;
+      sharing: boolean;
+    }) => {
+      const state = get();
+      if (
+        state.activeChannelId !== channelId ||
+        userId === useAuthStore.getState().user?.id
+      ) {
+        return;
+      }
+      set((s) => {
+        const existing = s.remoteParticipants[userId];
+        if (!existing) return s;
+        return {
+          remoteParticipants: {
+            ...s.remoteParticipants,
+            [userId]: {
+              ...existing,
+              sharingScreen: sharing,
+              screenTransport: sharing ? "p2p" : null,
+              screenStream: sharing ? existing.screenStream : null,
+            },
+          },
+        };
+      });
+      if (sharing) playVoiceCue("stream");
     },
   );
 
@@ -1245,6 +1367,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
+    screenTransport: null,
     screenViewerCount: 0,
     remoteParticipants: {},
     serverPingMs: null,
@@ -1275,6 +1398,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       stopAnalyzers.delete("local");
       state.localStream?.getTracks().forEach((track) => track.stop());
       state.screenStream?.getTracks().forEach((track) => track.stop());
+      p2pScreenStream = null;
       resetSfuState();
 
       const myId = useAuthStore.getState().user?.id;
@@ -1456,7 +1580,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         });
         const [videoTrack] = camStream.getVideoTracks();
         state.localStream.addTrack(videoTrack);
-        peers.forEach((pc) => pc.addTrack(videoTrack, state.localStream!));
+        peers.forEach((pc) => {
+          const sender = pc.addTrack(videoTrack, state.localStream!);
+          applyCameraSenderParams(sender);
+        });
         set({ cameraEnabled: true });
       } catch {
         useToastStore
@@ -1469,6 +1596,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const state = get();
       if (!state.activeChannelId || state.screenSharing) return;
       const channelId = state.activeChannelId;
+      const settings = broadcastSettings();
+      const useP2p =
+        settings.broadcastMode === "manual" &&
+        settings.broadcastTransport === "p2p";
 
       let screenStream: MediaStream;
       try {
@@ -1489,9 +1620,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         .getVideoTracks()[0]
         ?.addEventListener("ended", () => get().stopScreenShare());
 
-      // Show the local preview right away — it doesn't depend on the SFU
-      // handshake below, only on the capture itself having succeeded.
-      set({ screenStream, screenSharing: true });
+      // Show the local preview right away — it doesn't depend on the
+      // SFU/P2P handshake below, only on the capture itself having succeeded.
+      set({
+        screenStream,
+        screenSharing: true,
+        screenTransport: useP2p ? "p2p" : "sfu",
+      });
       playVoiceCue("stream");
 
       if (screenStream.getAudioTracks().length > 0) {
@@ -1507,8 +1642,31 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           );
       }
 
+      if (useP2p) {
+        // Transmissão > Manual > Transporte = P2P: send straight to every
+        // peer over the existing mesh instead of through the SFU. Trades the
+        // SFU's per-viewer quality layers and idle-pause for zero server hop.
+        p2pScreenStream = screenStream;
+        peers.forEach((pc) => {
+          screenStream.getTracks().forEach((track) => {
+            try {
+              pc.addTrack(track, screenStream);
+              applyP2pScreenSenderParams(pc, track);
+            } catch (trackErr) {
+              console.error(
+                `[voice] falha ao anexar track de ${track.kind} da tela ao peer P2P`,
+                trackErr,
+              );
+            }
+          });
+        });
+        socket.emit("voice:screen_share_state", { channelId, sharing: true });
+        return;
+      }
+
       try {
         const transport = await ensureSendTransport(channelId);
+        const device = await ensureSfuDevice(channelId);
         // Each track is produced independently — one track failing (e.g. no
         // system audio available) shouldn't stop the other from publishing.
         let publishedAny = false;
@@ -1521,14 +1679,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             if (track.kind === "video") {
               track.contentHint = "detail";
             }
+            const isVideo = track.kind === "video";
             const producer = await transport.produce({
               track,
-              encodings:
-                track.kind === "video" ? SCREEN_SHARE_ENCODINGS : undefined,
-              codecOptions:
-                track.kind === "video"
-                  ? { videoGoogleStartBitrate: 1000 }
-                  : undefined,
+              encodings: isVideo
+                ? resolveScreenShareEncodings(settings, track.getSettings().height)
+                : undefined,
+              codec: isVideo
+                ? resolveSfuVideoCodec(device.rtpCapabilities.codecs, settings)
+                : undefined,
+              codecOptions: isVideo
+                ? { videoGoogleStartBitrate: 1000 }
+                : undefined,
             });
             sfuProducers.set(producer.id, producer);
             publishedAny = true;
@@ -1557,14 +1719,40 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const state = get();
       if (!state.screenStream) return;
 
-      sfuProducers.forEach((producer) => producer.close());
-      sfuProducers.clear();
-      if (state.activeChannelId) {
-        socket.emit("sfu:stop_producing", { channelId: state.activeChannelId });
+      if (state.screenTransport === "p2p") {
+        peers.forEach((pc) => {
+          pc.getSenders()
+            .filter((sender) => sender.track && state.screenStream!.getTracks().includes(sender.track))
+            .forEach((sender) => {
+              try {
+                pc.removeTrack(sender);
+              } catch {
+                // peer connection already closed/closing — nothing to clean up
+              }
+            });
+        });
+        p2pScreenStream = null;
+        if (state.activeChannelId) {
+          socket.emit("voice:screen_share_state", {
+            channelId: state.activeChannelId,
+            sharing: false,
+          });
+        }
+      } else {
+        sfuProducers.forEach((producer) => producer.close());
+        sfuProducers.clear();
+        if (state.activeChannelId) {
+          socket.emit("sfu:stop_producing", { channelId: state.activeChannelId });
+        }
       }
 
       state.screenStream.getTracks().forEach((track) => track.stop());
-      set({ screenStream: null, screenSharing: false, screenViewerCount: 0 });
+      set({
+        screenStream: null,
+        screenSharing: false,
+        screenViewerCount: 0,
+        screenTransport: null,
+      });
     },
 
     watchScreen: (userId) => {

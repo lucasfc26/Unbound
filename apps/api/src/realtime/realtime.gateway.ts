@@ -437,6 +437,33 @@ export class RealtimeGateway
     return { id };
   }
 
+  /**
+   * Transmissão > Manual > Transporte = P2P: the screen goes straight over
+   * the existing WebRTC mesh (see voice.gateway's offer/answer relay), so
+   * there's no SFU producer to announce here — this is a pure signaling
+   * relay (same trust model as voice:cue) telling the room to flip the
+   * sharer's "sharingScreen" flag.
+   */
+  @SubscribeMessage('voice:screen_share_state')
+  async onVoiceScreenShareState(
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: { channelId: string; sharing: boolean },
+  ) {
+    this.assertVoiceParticipant(client, data.channelId);
+    if (data.sharing) {
+      await this.voice.assertCanShareScreen(
+        data.channelId,
+        client.data.user.id,
+      );
+    }
+
+    client.to(this.voiceRoom(data.channelId)).emit('voice:screen_share_state', {
+      channelId: data.channelId,
+      userId: client.data.user.id,
+      sharing: data.sharing,
+    });
+  }
+
   /** Existing producers for a channel — lets a viewer who joined mid-share catch up. */
   @SubscribeMessage('sfu:list_producers')
   onSfuListProducers(

@@ -10,6 +10,7 @@ import {
   Keyboard,
   Info,
   LogOut,
+  Cast,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -17,6 +18,7 @@ import { useToastStore } from "@/stores/useToastStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { VoiceSettings } from "@/components/settings/VoiceSettings";
+import { BroadcastSettings } from "@/components/settings/BroadcastSettings";
 import { AccountSettings } from "@/components/settings/AccountSettings";
 import { ProfileSettings } from "@/components/settings/ProfileSettings";
 import { PrivacySettings } from "@/components/settings/PrivacySettings";
@@ -31,6 +33,7 @@ type SettingsSection =
   | "privacy"
   | "notifications"
   | "voice"
+  | "broadcast"
   | "appearance"
   | "shortcuts"
   | "about";
@@ -41,6 +44,7 @@ const sections: { id: SettingsSection; label: string; icon: typeof User }[] = [
   { id: "privacy", label: "Privacidade", icon: Shield },
   { id: "notifications", label: "Notificações", icon: Bell },
   { id: "voice", label: "Voz e vídeo", icon: Mic },
+  { id: "broadcast", label: "Transmissão", icon: Cast },
   { id: "appearance", label: "Aparência", icon: Palette },
   { id: "shortcuts", label: "Atalhos", icon: Keyboard },
   { id: "about", label: "Sobre", icon: Info },
@@ -128,6 +132,8 @@ function SettingsPanel({ section }: { section: SettingsSection }) {
       return <AppearanceSettings />;
     case "voice":
       return <VoiceSettings />;
+    case "broadcast":
+      return <BroadcastSettings />;
     case "shortcuts":
       return <ShortcutSettings />;
     default:
