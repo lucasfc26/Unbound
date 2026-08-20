@@ -130,8 +130,12 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Public IPv4 stamped into ICE candidates. Browsers outside Docker cannot
-   * reach 172.x, so an empty/loopback MEDIASOUP_ANNOUNCED_IP is treated as
-   * unset and we try to detect the host's egress address instead.
+   * reach 172.x, so an empty MEDIASOUP_ANNOUNCED_IP is treated as unset and
+   * we try to detect the host's egress address instead. An *explicit*
+   * loopback (docker-compose.override.example.yml sets 127.0.0.1 for
+   * same-machine dev — the browser and the container reach each other
+   * through the published port mapping) is honored as-is; only genuinely
+   * non-routable wildcard values (0.0.0.0, ::) are rejected.
    */
   async resolveAnnouncedIp(): Promise<string | undefined> {
     if (this.announcedIpResolved) return this.announcedIp;
@@ -411,13 +415,7 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
 }
 
 function isUnusableAnnouncedIp(ip: string): boolean {
-  return (
-    ip === '127.0.0.1' ||
-    ip === '0.0.0.0' ||
-    ip === '::' ||
-    ip === '::1' ||
-    ip === 'localhost'
-  );
+  return ip === '0.0.0.0' || ip === '::';
 }
 
 function isPrivateIpv4(ip: string): boolean {
