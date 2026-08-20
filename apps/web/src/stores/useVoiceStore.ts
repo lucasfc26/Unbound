@@ -20,8 +20,19 @@ import {
 } from "@/lib/voicePipeline";
 import { loadUserVolumes, saveUserVolumes } from "@/lib/userVolumes";
 
-const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+];
 const SPEAKING_THRESHOLD = 12;
+
+/**
+ * RTCHIBRIDO.mp princípio 10 — STUN alone only tells peers their public
+ * address; behind a symmetric NAT or a locked-down firewall that's not
+ * enough. The server hands out short-lived TURN credentials (if configured)
+ * on every voice:join ack, refreshed each time so a stale pair never lingers
+ * past its TTL. Falls back to STUN-only when the server has no TURN set up.
+ */
+let iceServers: RTCIceServer[] = DEFAULT_ICE_SERVERS;
 
 /**
  * RTCHIBRIDO.mp Parte 5/6 — Qualidade adaptativa / Simulcast. Three spatial
@@ -630,7 +641,7 @@ function createPeerConnection(
   get: GetFn,
 ): RTCPeerConnection {
   const socket = getSocket();
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const pc = new RTCPeerConnection({ iceServers });
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
 
   pc.onicecandidate = (event) => {
@@ -784,8 +795,16 @@ async function performRealJoin(
       serverMuted?: boolean;
     }[];
     serverMuted?: boolean;
+    iceServers?: RTCIceServer[];
   }>((resolve) => socket.emit("voice:join", { channelId }, resolve));
   if (myToken !== joinToken) return;
+
+  // Peer connections below are built with whatever this resolves to — TURN
+  // creds when the server has coturn configured, STUN-only otherwise.
+  iceServers =
+    ack.iceServers && ack.iceServers.length > 0
+      ? ack.iceServers
+      : DEFAULT_ICE_SERVERS;
 
   if (ack.serverMuted) {
     set({ serverMuted: true, micEnabled: false });

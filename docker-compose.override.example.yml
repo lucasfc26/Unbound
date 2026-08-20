@@ -9,6 +9,25 @@ services:
       # container's own network IP isn't it. Loopback works when both
       # browser tabs run on this same machine.
       MEDIASOUP_ANNOUNCED_IP: 127.0.0.1
+      # TURN relay (mic/camera P2P fallback) — same shared secret as the
+      # coturn service below. Optional: leave both empty on either service
+      # to run STUN-only locally.
+      TURN_SECRET: devsecret
+      TURN_HOST: 127.0.0.1
+
+  coturn:
+    command:
+      - -n
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --realm=maselview
+      - --use-auth-secret
+      - --static-auth-secret=devsecret
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --external-ip=127.0.0.1
 
   frontend:
     build:

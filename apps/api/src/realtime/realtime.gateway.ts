@@ -22,6 +22,7 @@ import {
   SETTABLE_STATUSES,
 } from '../presence/presence.service';
 import { VoiceService } from '../voice/voice.service';
+import { TurnService } from '../voice/turn.service';
 import { LinkPreviewService } from '../link-preview/link-preview.service';
 import { SfuService } from '../sfu/sfu.service';
 import { RealtimeEmitterService } from './realtime-emitter.service';
@@ -63,6 +64,7 @@ export class RealtimeGateway
     private readonly messages: MessagesService,
     private readonly presence: PresenceService,
     private readonly voice: VoiceService,
+    private readonly turn: TurnService,
     private readonly linkPreview: LinkPreviewService,
     private readonly sfu: SfuService,
     private readonly emitter: RealtimeEmitterService,
@@ -186,6 +188,10 @@ export class RealtimeGateway
         data.channelId,
         client.data.user.id,
       ),
+      // RTCHIBRIDO.mp princípio 10 — só entra na resposta do join porque o
+      // mesh P2P (mic/câmera) é criado logo em seguida a partir dela; STUN
+      // sozinho não basta para NAT simétrico/firewall restritivo.
+      iceServers: this.turn.getIceServers(client.data.user.id),
     };
   }
 

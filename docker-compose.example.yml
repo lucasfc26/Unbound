@@ -45,6 +45,9 @@ services:
       MEDIASOUP_ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP}
       MEDIASOUP_MIN_PORT: 40000
       MEDIASOUP_MAX_PORT: 40049
+      TURN_SECRET: ${TURN_SECRET}
+      TURN_HOST: ${TURN_EXTERNAL_IP}
+      TURN_PORT: 3478
     ports:
       - "127.0.0.1:8083:3000"
       # mediasoup RTP/ICE — needs to be reachable directly, it can't go through
@@ -60,6 +63,31 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # RTCHIBRIDO.mp princípio 10 — relay para o mesh P2P (mic/câmera) quando
+  # STUN não basta (NAT simétrico/firewall restritivo). TURN_SECRET é
+  # compartilhado com o backend (TurnService gera credenciais efêmeras a
+  # partir dele); TURN_EXTERNAL_IP é o IPv4 público que os candidatos de
+  # relay anunciam — mesma lógica do MEDIASOUP_ANNOUNCED_IP acima.
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    command:
+      - -n
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --realm=maselview
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET}
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --external-ip=${TURN_EXTERNAL_IP}
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
 
   frontend:
     build:
