@@ -2,9 +2,7 @@ import { API_URL } from "./api";
 
 /**
  * Turns a stored path (`/uploads/icons/….webp`) into a URL the browser can
- * load. Production nginx only forwards `/api/…` to Nest, so we prefix with
- * `API_URL` (which already includes `/api` there). A request to
- * `/uploads/…` on the site origin hits the frontend and shows a broken image.
+ * load. Same origin as the API; nginx must proxy `/uploads/` to the backend.
  */
 export function resolveMediaUrl(url: string | null | undefined): string | null {
   if (!url) return null;

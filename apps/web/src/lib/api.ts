@@ -3,16 +3,15 @@ const rawApiUrl = (
 ).replace(/\/$/, "");
 
 /**
- * HTTP API base. In production behind nginx this is
- * `https://unbound.maselcorp.com.br/api` — the proxy strips `/api` before
- * the request hits Nest (which has no global prefix).
+ * HTTP API base. In production this is the site origin
+ * (`https://unbound.maselcorp.com.br`); nginx forwards /auth, /users,
+ * /uploads, /servers, … to Nest. There is no `/api` prefix.
  */
 export const API_URL = rawApiUrl;
 
 /**
- * Public origin without a trailing `/api`. Socket.IO talks to the host
- * root (`io("…/api")` would be a namespace, not an HTTP prefix). Uploads
- * go through `API_URL` instead — see `resolveMediaUrl`.
+ * Origin without a trailing `/api`, if one was set. Socket.IO must talk to
+ * the host root (`io("…/api")` would be a namespace).
  */
 export const PUBLIC_ORIGIN = rawApiUrl.replace(/\/api$/i, "");
 

@@ -39,9 +39,6 @@ async function bootstrap() {
   // its own index.html as the "installer" whenever that step was missed).
   mkdirSync(join(uploadsDir, 'releases'), { recursive: true });
   app.useStaticAssets(uploadsDir, { prefix: '/uploads/' });
-  // Same files under /api/uploads so a proxy that does not strip `/api`
-  // still serves avatars/icons (the browser always requests via API_URL).
-  app.useStaticAssets(uploadsDir, { prefix: '/api/uploads/' });
 
   app.enableCors({
     origin: resolveAllowedOrigins(config.get<string>('FRONTEND_URL')),
