@@ -362,11 +362,7 @@ export class RealtimeGateway
     @MessageBody() data: { channelId: string },
   ) {
     this.assertVoiceParticipant(client, data.channelId);
-    return this.sfu.createTransport(
-      data.channelId,
-      client.data.user.id,
-      this.config.get<string>('MEDIASOUP_ANNOUNCED_IP') || undefined,
-    );
+    return this.sfu.createTransport(data.channelId, client.data.user.id);
   }
 
   @SubscribeMessage('sfu:connect_transport')
@@ -454,6 +450,7 @@ export class RealtimeGateway
     @MessageBody() data: { consumerId: string },
   ) {
     await this.sfu.resumeConsumer(data.consumerId, client.data.user.id);
+    return {};
   }
 
   @SubscribeMessage('sfu:stop_producing')

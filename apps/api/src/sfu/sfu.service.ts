@@ -57,6 +57,8 @@ export interface ConsumerParams {
 export class SfuService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SfuService.name);
   private worker: MediasoupTypes.Worker;
+  private announcedIp: string | undefined;
+  private announcedIpResolved = false;
 
   private readonly routers = new Map<string, MediasoupTypes.Router>();
   private readonly transports = new Map<string, TransportEntry>();
@@ -76,6 +78,7 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
         'mediasoup worker died — screen share via SFU is unavailable until the API restarts',
       );
     });
+    await this.resolveAnnouncedIp();
   }
 
   onModuleDestroy() {
@@ -110,19 +113,63 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
     return router.rtpCapabilities;
   }
 
+  /**
+   * Public IPv4 stamped into ICE candidates. Browsers outside Docker cannot
+   * reach 172.x, so an empty/loopback MEDIASOUP_ANNOUNCED_IP is treated as
+   * unset and we try to detect the host's egress address instead.
+   */
+  async resolveAnnouncedIp(): Promise<string | undefined> {
+    if (this.announcedIpResolved) return this.announcedIp;
+    this.announcedIpResolved = true;
+
+    const configured = this.config.get<string>('MEDIASOUP_ANNOUNCED_IP')?.trim();
+    if (configured && !isUnusableAnnouncedIp(configured)) {
+      this.announcedIp = configured;
+      this.logger.log(`mediasoup announced IP from env: ${this.announcedIp}`);
+      return this.announcedIp;
+    }
+
+    const detected = await detectPublicIpv4();
+    if (detected) {
+      this.announcedIp = detected;
+      this.logger.log(`mediasoup announced IP auto-detected: ${this.announcedIp}`);
+      return this.announcedIp;
+    }
+
+    this.logger.warn(
+      'MEDIASOUP_ANNOUNCED_IP is unset and public IP auto-detect failed. Screen-share ICE will announce the container IP, which remote browsers cannot reach — viewers will see a black screen.',
+    );
+    return undefined;
+  }
+
   async createTransport(
     channelId: string,
     userId: string,
-    announcedIp: string | undefined,
   ): Promise<TransportParams> {
     const router = await this.getOrCreateRouter(channelId);
+    const announcedIp = await this.resolveAnnouncedIp();
+    const listenInfo = {
+      ip: '0.0.0.0' as const,
+      ...(announcedIp ? { announcedAddress: announcedIp } : {}),
+    };
     const transport = await router.createWebRtcTransport({
-      listenIps: [{ ip: '0.0.0.0', announcedIp }],
-      enableUdp: true,
-      enableTcp: false,
+      listenInfos: [
+        { ...listenInfo, protocol: 'udp' },
+        { ...listenInfo, protocol: 'tcp' },
+      ],
       initialAvailableOutgoingBitrate: 1_000_000,
     });
     this.transports.set(transport.id, { transport, channelId, userId });
+
+    const iceSummary = transport.iceCandidates
+      .map((candidate) => `${candidate.ip}:${candidate.port}/${candidate.protocol}`)
+      .join(', ');
+    this.logger.log(`SFU transport ${transport.id} ICE ${iceSummary || '(none)'}`);
+    if (transport.iceCandidates.some((candidate) => isPrivateIpv4(candidate.ip))) {
+      this.logger.warn(
+        'ICE candidates include a private IP — remote viewers will see a black screen unless they are on the same LAN. Set MEDIASOUP_ANNOUNCED_IP to this host\'s public IPv4.',
+      );
+    }
 
     transport.on('dtlsstatechange', (state) => {
       this.logger.debug(
@@ -134,7 +181,7 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
       }
     });
     transport.on('icestatechange', (state) => {
-      this.logger.debug(`transport ${transport.id} icestatechange -> ${state}`);
+      this.logger.log(`transport ${transport.id} icestatechange -> ${state}`);
     });
 
     return {
@@ -270,4 +317,39 @@ export class SfuService implements OnModuleInit, OnModuleDestroy {
     this.maybeCloseRouter(channelId);
     return closedProducerIds;
   }
+}
+
+function isUnusableAnnouncedIp(ip: string): boolean {
+  return (
+    ip === '127.0.0.1' ||
+    ip === '0.0.0.0' ||
+    ip === '::' ||
+    ip === '::1' ||
+    ip === 'localhost'
+  );
+}
+
+function isPrivateIpv4(ip: string): boolean {
+  return (
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip) ||
+    ip.startsWith('127.') ||
+    ip === '0.0.0.0'
+  );
+}
+
+async function detectPublicIpv4(): Promise<string | undefined> {
+  const urls = ['https://api.ipify.org', 'https://ipv4.icanhazip.com'];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      if (!response.ok) continue;
+      const ip = (await response.text()).trim();
+      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && !isPrivateIpv4(ip)) return ip;
+    } catch {
+      // try the next source
+    }
+  }
+  return undefined;
 }

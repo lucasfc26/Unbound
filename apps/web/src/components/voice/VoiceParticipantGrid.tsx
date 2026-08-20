@@ -130,8 +130,28 @@ function ScreenShareStage({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = stream;
-  }, [stream]);
+    const el = videoRef.current;
+    if (!el) return;
+    el.srcObject = stream;
+    el.muted = true;
+    const tryPlay = () => {
+      void el
+        .play()
+        .then(() => {
+          if (!isLocal) el.muted = false;
+        })
+        .catch(() => {
+          el.muted = true;
+          void el.play().catch(() => {});
+        });
+    };
+    tryPlay();
+    el.addEventListener("loadedmetadata", tryPlay);
+    return () => {
+      el.removeEventListener("loadedmetadata", tryPlay);
+      el.srcObject = null;
+    };
+  }, [stream, isLocal]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-accent bg-black">
@@ -167,7 +187,7 @@ function ScreenShareStage({
           ref={videoRef}
           autoPlay
           playsInline
-          muted={isLocal}
+          muted
           className="h-full w-full bg-black object-contain"
         />
         {/* Compartilhamento de tela sempre passa pelo SFU (mediasoup) — só

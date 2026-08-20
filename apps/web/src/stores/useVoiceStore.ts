@@ -330,6 +330,7 @@ async function ensureRecvTransport(
       .catch(errback);
   });
   transport.on("connectionstatechange", (connectionState) => {
+    console.warn("[voice] SFU recv transport", connectionState);
     if (connectionState === "failed" && sfuRecvTransport === transport) {
       sfuRecvTransport = null;
     }
@@ -358,6 +359,9 @@ async function ensureSendTransport(
       .then(() => callback())
       .catch(errback);
   });
+  transport.on("connectionstatechange", (connectionState) => {
+    console.warn("[voice] SFU send transport", connectionState);
+  });
   transport.on("produce", ({ kind, rtpParameters }, callback, errback) => {
     emitAck<{ id: string }>(socket, "sfu:produce", {
       channelId,
@@ -378,8 +382,27 @@ async function consumeProducer(
   producerId: string,
   userId: string,
   set: SetFn,
+  retries = 0,
 ) {
   if (sfuConsumedProducerIds.has(producerId)) return;
+
+  const rostered = useVoiceStore.getState().remoteParticipants[userId];
+  if (!rostered) {
+    if (retries >= 25) {
+      console.warn(
+        "[voice] SFU consume aborted: participant not in roster",
+        userId,
+      );
+      return;
+    }
+    window.setTimeout(() => {
+      consumeProducer(channelId, producerId, userId, set, retries + 1).catch(
+        () => {},
+      );
+    }, 200);
+    return;
+  }
+
   sfuConsumedProducerIds.add(producerId);
 
   try {
@@ -395,7 +418,7 @@ async function consumeProducer(
     }>(socket, "sfu:consume", {
       transportId: transport.id,
       producerId,
-      rtpCapabilities: device.recvRtpCapabilities,
+      rtpCapabilities: device.rtpCapabilities,
     });
 
     const consumer = await transport.consume({
@@ -405,25 +428,38 @@ async function consumeProducer(
       rtpParameters: params.rtpParameters,
     });
     sfuConsumers.set(consumer.id, { consumer, userId });
-    socket.emit("sfu:resume_consumer", { consumerId: consumer.id });
+    await emitAck(socket, "sfu:resume_consumer", { consumerId: consumer.id });
+
+    if (consumer.track.muted) {
+      await new Promise<void>((resolve) => {
+        const done = () => resolve();
+        consumer.track.addEventListener("unmute", done, { once: true });
+        window.setTimeout(done, 2000);
+      });
+    }
 
     set((state) => {
       const existing = state.remoteParticipants[userId];
       if (!existing) return state;
-      const stream = existing.screenStream ?? new MediaStream();
-      stream.addTrack(consumer.track);
+      const tracks = existing.screenStream
+        ? [...existing.screenStream.getTracks()]
+        : [];
+      if (!tracks.includes(consumer.track)) tracks.push(consumer.track);
       return {
         remoteParticipants: {
           ...state.remoteParticipants,
           [userId]: {
             ...existing,
-            screenStream: stream,
+            // New MediaStream so React rebinds <video srcObject> when the
+            // video track arrives after audio (same object would stay black).
+            screenStream: new MediaStream(tracks),
             sharingScreen: true,
           },
         },
       };
     });
-  } catch {
+  } catch (err) {
+    console.error("[voice] SFU consume failed", err);
     sfuConsumedProducerIds.delete(producerId);
   }
 }
@@ -435,7 +471,9 @@ async function catchUpOnScreenShares(channelId: string, set: SetFn) {
     { producerId: string; userId: string; kind: MsTypes.MediaKind }[]
   >(socket, "sfu:list_producers", { channelId });
   for (const producer of producers) {
-    consumeProducer(channelId, producer.producerId, producer.userId, set);
+    consumeProducer(channelId, producer.producerId, producer.userId, set).catch(
+      (err) => console.error("[voice] SFU catch-up consume failed", err),
+    );
   }
 }
 
@@ -1335,9 +1373,26 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // Each track is produced independently — one track failing (e.g. no
         // system audio available) shouldn't stop the other from publishing.
         let publishedAny = false;
-        for (const track of screenStream.getTracks()) {
+        const tracks = [...screenStream.getTracks()].sort((a, b) => {
+          if (a.kind === b.kind) return 0;
+          return a.kind === "video" ? -1 : 1;
+        });
+        for (const track of tracks) {
           try {
-            const producer = await transport.produce({ track });
+            if (track.kind === "video") {
+              track.contentHint = "detail";
+            }
+            const producer = await transport.produce({
+              track,
+              encodings:
+                track.kind === "video"
+                  ? [{ maxBitrate: 3_000_000 }]
+                  : undefined,
+              codecOptions:
+                track.kind === "video"
+                  ? { videoGoogleStartBitrate: 1000 }
+                  : undefined,
+            });
             sfuProducers.set(producer.id, producer);
             publishedAny = true;
           } catch (trackErr) {

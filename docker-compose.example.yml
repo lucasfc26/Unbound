@@ -49,8 +49,10 @@ services:
       - "127.0.0.1:8083:3000"
       # mediasoup RTP/ICE — needs to be reachable directly, it can't go through
       # the HTTP reverse proxy in front of 8083. Bound to all interfaces on
-      # purpose (0.0.0.0), unlike the proxied port above.
+      # purpose (0.0.0.0), unlike the proxied port above. Open UDP and TCP
+      # 40000-40049 on the VPS firewall as well.
       - "40000-40049:40000-40049/udp"
+      - "40000-40049:40000-40049/tcp"
     volumes:
       - uploads_data:/app/apps/api/uploads
     depends_on:
