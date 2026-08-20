@@ -10,9 +10,9 @@ const rawApiUrl = (
 export const API_URL = rawApiUrl;
 
 /**
- * Public origin without a trailing `/api`. Socket.IO and `/uploads` are
- * served on the host root, not under the API prefix (`io("…/api")` would
- * be treated as a Socket.IO namespace).
+ * Public origin without a trailing `/api`. Socket.IO talks to the host
+ * root (`io("…/api")` would be a namespace, not an HTTP prefix). Uploads
+ * go through `API_URL` instead — see `resolveMediaUrl`.
  */
 export const PUBLIC_ORIGIN = rawApiUrl.replace(/\/api$/i, "");
 

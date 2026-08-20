@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import { initials } from "@/lib/format";
 import { resolveMediaUrl } from "@/lib/mediaUrl";
@@ -37,6 +38,12 @@ export function Avatar({
   speaking,
   className,
 }: AvatarProps) {
+  const src = resolveMediaUrl(imageUrl);
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [src]);
+
   return (
     <div className={cn("relative shrink-0", className)}>
       <div
@@ -47,11 +54,12 @@ export function Avatar({
         )}
         style={{ backgroundColor: color }}
       >
-        {resolveMediaUrl(imageUrl) ? (
+        {src && !broken ? (
           <img
-            src={resolveMediaUrl(imageUrl)!}
+            src={src}
             alt={name}
             className="h-full w-full object-cover"
+            onError={() => setBroken(true)}
           />
         ) : (
           initials(name)

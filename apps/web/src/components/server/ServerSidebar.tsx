@@ -134,6 +134,17 @@ function IncomingFriendsBadge() {
 
 function ServerItem({ id, name, color, imageUrl, active, onSelect }: ServerItemProps) {
   const src = resolveMediaUrl(imageUrl);
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [src]);
+  const initials = name
+    .split(" ")
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+
   return (
     <Tooltip content={name} side="right">
       <button
@@ -147,15 +158,15 @@ function ServerItem({ id, name, color, imageUrl, active, onSelect }: ServerItemP
         )}
         style={{ backgroundColor: color }}
       >
-        {src ? (
-          <img src={src} alt="" className="h-full w-full object-cover" />
+        {src && !broken ? (
+          <img
+            src={src}
+            alt=""
+            className="h-full w-full object-cover"
+            onError={() => setBroken(true)}
+          />
         ) : (
-          name
-            .split(" ")
-            .slice(0, 2)
-            .map((word) => word[0])
-            .join("")
-            .toUpperCase()
+          initials
         )}
       </button>
     </Tooltip>
