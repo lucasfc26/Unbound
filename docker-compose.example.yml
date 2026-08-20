@@ -1,3 +1,6 @@
+# Copy to docker-compose.yml on the server (that file is gitignored).
+# Local passwords and announced IPs stay only in the server copy.
+
 services:
   postgres:
     image: postgres:16-alpine
