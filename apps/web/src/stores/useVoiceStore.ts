@@ -18,7 +18,12 @@ import {
   createVoicePipeline,
   getVoicePipeline,
 } from "@/lib/voicePipeline";
-import { loadUserVolumes, saveUserVolumes } from "@/lib/userVolumes";
+import {
+  loadStreamVolumes,
+  loadUserVolumes,
+  saveStreamVolumes,
+  saveUserVolumes,
+} from "@/lib/userVolumes";
 import {
   DEFAULT_BROADCAST_SETTINGS,
   resolveCameraSenderParams,
@@ -102,6 +107,7 @@ interface VoiceState {
   serverMuted: boolean;
   locallyMutedUserIds: Record<string, true>;
   volumesByUserId: Record<string, number>;
+  streamVolumesByUserId: Record<string, number>;
   cameraEnabled: boolean;
   screenSharing: boolean;
   screenStream: MediaStream | null;
@@ -128,6 +134,7 @@ interface VoiceState {
   syncMic: () => void;
   toggleLocalMute: (userId: string) => void;
   setUserVolume: (userId: string, volume: number) => void;
+  setStreamVolume: (userId: string, volume: number) => void;
   toggleServerMute: (channelId: string, userId: string, muted: boolean) => void;
   moveMember: (
     channelId: string,
@@ -1367,6 +1374,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     serverMuted: false,
     locallyMutedUserIds: {},
     volumesByUserId: loadUserVolumes(),
+    streamVolumesByUserId: loadStreamVolumes(),
     cameraEnabled: false,
     screenSharing: false,
     screenStream: null,
@@ -1545,6 +1553,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         const volumesByUserId = { ...state.volumesByUserId, [userId]: clamped };
         saveUserVolumes(volumesByUserId);
         return { volumesByUserId };
+      });
+    },
+
+    setStreamVolume: (userId, volume) => {
+      const clamped = Math.max(0, Math.min(100, Math.round(volume)));
+      set((state) => {
+        const streamVolumesByUserId = {
+          ...state.streamVolumesByUserId,
+          [userId]: clamped,
+        };
+        saveStreamVolumes(streamVolumesByUserId);
+        return { streamVolumesByUserId };
       });
     },
 

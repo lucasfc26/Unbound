@@ -9,6 +9,9 @@ import {
   PictureInPicture2,
   Server,
   Users,
+  Volume1,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -16,6 +19,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
 import type { User } from "@/types";
@@ -74,6 +78,7 @@ export function VoiceParticipantGrid({
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
         <ScreenShareStage
+          userId={watched.user.id}
           displayName={watched.user.displayName}
           stream={watched.screenStream}
           transport={watched.screenTransport ?? "sfu"}
@@ -139,7 +144,30 @@ function pipSupported(): boolean {
   );
 }
 
+function applyScreenShareVolume(
+  el: HTMLVideoElement,
+  {
+    isLocal,
+    deafened,
+    streamVolume,
+    outputGain,
+  }: {
+    isLocal: boolean;
+    deafened: boolean;
+    streamVolume: number;
+    outputGain: number;
+  },
+) {
+  if (isLocal || deafened || streamVolume <= 0) {
+    el.muted = true;
+    return;
+  }
+  el.volume = Math.min(1, Math.max(0, (streamVolume / 100) * (outputGain / 100)));
+  el.muted = false;
+}
+
 function ScreenShareStage({
+  userId,
   displayName,
   stream,
   transport,
@@ -149,6 +177,7 @@ function ScreenShareStage({
   onStopShare,
   onStopWatching,
 }: {
+  userId: string;
   displayName: string;
   stream: MediaStream;
   transport: "p2p" | "sfu";
@@ -160,11 +189,46 @@ function ScreenShareStage({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const lastStreamVolumeRef = useRef(100);
   const viewerCount = useVoiceStore((state) => state.screenViewerCount);
+  const deafened = useVoiceStore((state) => state.deafened);
+  const streamVolume = useVoiceStore(
+    (state) => state.streamVolumesByUserId[userId] ?? 100,
+  );
+  const setStreamVolume = useVoiceStore((state) => state.setStreamVolume);
+  const outputGain = useSettingsStore(
+    (state) => state.settings?.outputGain ?? 100,
+  );
   const pushToast = useToastStore((state) => state.push);
   const [maximized, setMaximized] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [pipActive, setPipActive] = useState(false);
+  const [hasAudio, setHasAudio] = useState(
+    () => stream.getAudioTracks().length > 0,
+  );
+
+  if (streamVolume > 0) lastStreamVolumeRef.current = streamVolume;
+
+  const volumeSettingsRef = useRef({ isLocal, deafened, streamVolume, outputGain });
+  volumeSettingsRef.current = { isLocal, deafened, streamVolume, outputGain };
+
+  useEffect(() => {
+    const syncAudio = () => {
+      setHasAudio(
+        stream.getAudioTracks().some((track) => track.readyState !== "ended"),
+      );
+    };
+    syncAudio();
+    stream.addEventListener("addtrack", syncAudio);
+    stream.addEventListener("removetrack", syncAudio);
+    const tracks = stream.getAudioTracks();
+    tracks.forEach((track) => track.addEventListener("ended", syncAudio));
+    return () => {
+      stream.removeEventListener("addtrack", syncAudio);
+      stream.removeEventListener("removetrack", syncAudio);
+      tracks.forEach((track) => track.removeEventListener("ended", syncAudio));
+    };
+  }, [stream]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -175,7 +239,7 @@ function ScreenShareStage({
       void el
         .play()
         .then(() => {
-          if (!isLocal) el.muted = false;
+          applyScreenShareVolume(el, volumeSettingsRef.current);
         })
         .catch(() => {
           el.muted = true;
@@ -188,7 +252,13 @@ function ScreenShareStage({
       el.removeEventListener("loadedmetadata", tryPlay);
       el.srcObject = null;
     };
-  }, [stream, isLocal]);
+  }, [stream]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    applyScreenShareVolume(el, { isLocal, deafened, streamVolume, outputGain });
+  }, [isLocal, deafened, streamVolume, outputGain]);
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -329,6 +399,57 @@ function ScreenShareStage({
             </span>
           )}
         </span>
+        {!isLocal && hasAudio && (
+          <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg bg-black/70 px-1.5 py-1">
+            <Tooltip
+              content={
+                streamVolume === 0
+                  ? "Ativar som da transmissão"
+                  : "Silenciar transmissão"
+              }
+              side="top"
+            >
+              <IconButton
+                aria-label={
+                  streamVolume === 0
+                    ? "Ativar som da transmissão"
+                    : "Silenciar transmissão"
+                }
+                size="sm"
+                variant="ghost"
+                className="text-white hover:bg-white/15 hover:text-white"
+                onClick={() =>
+                  setStreamVolume(
+                    userId,
+                    streamVolume === 0 ? lastStreamVolumeRef.current || 100 : 0,
+                  )
+                }
+              >
+                {streamVolume === 0 ? (
+                  <VolumeX className="h-4 w-4" />
+                ) : streamVolume < 50 ? (
+                  <Volume1 className="h-4 w-4" />
+                ) : (
+                  <Volume2 className="h-4 w-4" />
+                )}
+              </IconButton>
+            </Tooltip>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={streamVolume}
+              aria-label="Volume da transmissão"
+              onChange={(event) =>
+                setStreamVolume(userId, Number(event.target.value))
+              }
+              className="h-1.5 w-28 cursor-pointer accent-accent"
+            />
+            <span className="w-8 text-right text-caption tabular-nums text-white/80">
+              {streamVolume}%
+            </span>
+          </div>
+        )}
         <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg bg-black/70 p-1">
           <Tooltip content={pipActive ? "Sair do picture-in-picture" : "Picture-in-picture"} side="top">
             <IconButton
