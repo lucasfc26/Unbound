@@ -3,6 +3,7 @@ import type {
   Channel,
   ChannelCategory,
   ChannelType,
+  ChannelVisibility,
   Server,
   ServerRole,
   User,
@@ -24,8 +25,13 @@ import {
 import {
   createCategory as apiCreateCategory,
   createChannel as apiCreateChannel,
+  deleteCategory as apiDeleteCategory,
+  deleteChannel as apiDeleteChannel,
   listCategories,
   listChannels,
+  reorderChannels as apiReorderChannels,
+  updateCategory as apiUpdateCategory,
+  updateChannel as apiUpdateChannel,
   type ApiChannel,
   type ApiChannelCategory,
 } from "@/lib/channels";
@@ -54,6 +60,7 @@ interface CreateChannelInput {
   categoryId: string | null;
   name: string;
   type: ChannelType;
+  visibility?: ChannelVisibility;
 }
 
 export interface ServerMemberEntry {
@@ -81,6 +88,27 @@ interface ServerState {
   leaveServer: (serverId: string) => Promise<void>;
   addCategory: (input: CreateCategoryInput) => Promise<ChannelCategory>;
   addChannel: (input: CreateChannelInput) => Promise<Channel>;
+  updateChannel: (
+    serverId: string,
+    channelId: string,
+    input: {
+      name?: string;
+      topic?: string;
+      categoryId?: string | null;
+      visibility?: ChannelVisibility;
+    },
+  ) => Promise<void>;
+  deleteChannel: (serverId: string, channelId: string) => Promise<void>;
+  reorderChannels: (
+    serverId: string,
+    items: { id: string; categoryId?: string | null; position: number }[],
+  ) => Promise<void>;
+  updateCategory: (
+    serverId: string,
+    categoryId: string,
+    name: string,
+  ) => Promise<void>;
+  deleteCategory: (serverId: string, categoryId: string) => Promise<void>;
 }
 
 function toServer(api: ApiServer): Server {
@@ -111,6 +139,7 @@ function toChannel(api: ApiChannel): Channel {
     categoryId: api.categoryId,
     name: api.name,
     type: api.type,
+    visibility: api.visibility ?? "EVERYONE",
     topic: api.topic ?? undefined,
     position: api.position,
   };
@@ -363,11 +392,12 @@ export const useServerStore = create<ServerState>((set) => {
       return category;
     },
 
-    addChannel: async ({ serverId, categoryId, name, type }) => {
+    addChannel: async ({ serverId, categoryId, name, type, visibility }) => {
       const created = await apiCreateChannel(serverId, {
         name,
         type,
         categoryId,
+        visibility,
       });
       const channel = toChannel(created);
       // Same race as addCategory above: the channel:create broadcast can win the race.
@@ -377,6 +407,62 @@ export const useServerStore = create<ServerState>((set) => {
           : { channels: [...state.channels, channel] },
       );
       return channel;
+    },
+
+    updateChannel: async (serverId, channelId, input) => {
+      const updated = toChannel(
+        await apiUpdateChannel(serverId, channelId, input),
+      );
+      set((state) => ({
+        channels: state.channels.map((item) =>
+          item.id === channelId ? updated : item,
+        ),
+      }));
+    },
+
+    deleteChannel: async (serverId, channelId) => {
+      await apiDeleteChannel(serverId, channelId);
+      set((state) => ({
+        channels: state.channels.filter((item) => item.id !== channelId),
+      }));
+    },
+
+    reorderChannels: async (serverId, items) => {
+      await apiReorderChannels(serverId, items);
+      set((state) => ({
+        channels: state.channels.map((channel) => {
+          const next = items.find((item) => item.id === channel.id);
+          if (!next) return channel;
+          return {
+            ...channel,
+            categoryId: next.categoryId ?? null,
+            position: next.position,
+          };
+        }),
+      }));
+    },
+
+    updateCategory: async (serverId, categoryId, name) => {
+      const updated = toCategory(
+        await apiUpdateCategory(serverId, categoryId, { name }),
+      );
+      set((state) => ({
+        categories: state.categories.map((item) =>
+          item.id === categoryId ? updated : item,
+        ),
+      }));
+    },
+
+    deleteCategory: async (serverId, categoryId) => {
+      await apiDeleteCategory(serverId, categoryId);
+      set((state) => ({
+        categories: state.categories.filter((item) => item.id !== categoryId),
+        channels: state.channels.map((channel) =>
+          channel.categoryId === categoryId
+            ? { ...channel, categoryId: null }
+            : channel,
+        ),
+      }));
     },
   };
 });

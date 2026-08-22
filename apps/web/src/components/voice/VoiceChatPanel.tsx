@@ -54,6 +54,7 @@ export function VoiceChatPanel({
         </IconButton>
       </header>
       <MessageList
+        channelId={channel.id}
         messages={messages}
         currentUserId={currentUser?.id}
         onEdit={editMessage}

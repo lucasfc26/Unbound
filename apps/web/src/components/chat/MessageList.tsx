@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import { Smile, Reply, Pencil, Trash2, Check, X } from "lucide-react";
 import type { Message } from "@/types";
 import { formatDayLabel, formatTime } from "@/lib/format";
@@ -54,6 +54,7 @@ interface MessageListProps {
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
+  channelId?: string;
 }
 
 export function MessageList({
@@ -64,12 +65,53 @@ export function MessageList({
   hasMore,
   loadingMore,
   onLoadMore,
+  channelId,
 }: MessageListProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const prevFirstId = useRef<string | undefined>();
+  const prevHeight = useRef(0);
+
+  useLayoutEffect(() => {
+    stickToBottom.current = true;
+    prevFirstId.current = undefined;
+    prevHeight.current = 0;
+  }, [channelId]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const firstId = messages[0]?.id;
+    const prepended =
+      Boolean(firstId) &&
+      Boolean(prevFirstId.current) &&
+      firstId !== prevFirstId.current &&
+      !stickToBottom.current;
+
+    if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    } else if (prepended) {
+      el.scrollTop += el.scrollHeight - prevHeight.current;
+    }
+
+    prevFirstId.current = firstId;
+    prevHeight.current = el.scrollHeight;
+  }, [messages]);
+
   const groups = groupMessages(messages);
   let lastDayLabel = "";
 
   return (
-    <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-4">
+    <div
+      ref={scrollRef}
+      onScroll={() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        stickToBottom.current =
+          el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+      }}
+      className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-4"
+    >
       {hasMore && (
         <div className="mb-2 flex justify-center">
           <Button

@@ -16,7 +16,7 @@ import { API_URL } from "@/lib/api";
 // it into a Docker build context, which is what silently turned this into
 // index.html served with a .exe filename before.
 const DOWNLOAD_URL = `${API_URL}/uploads/releases/Unbound-Setup.exe`;
-const APP_VERSION = "0.3.2";
+const APP_VERSION = "0.3.3";
 
 const FEATURES = [
   {

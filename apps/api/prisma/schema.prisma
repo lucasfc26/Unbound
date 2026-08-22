@@ -33,6 +33,12 @@ enum ChannelType {
   DM
 }
 
+enum ChannelVisibility {
+  EVERYONE
+  MODERATORS
+  ADMINS
+}
+
 enum FriendshipStatus {
   PENDING
   ACCEPTED
@@ -99,8 +105,9 @@ model UserSettings {
   notificationSound    Boolean @default(true)
 
   // Aparência
-  theme   String @default("dark")
-  density String @default("normal")
+  theme        String @default("dark")
+  customColors Json?
+  density      String @default("normal")
 
   // Voz
   micGain               Int     @default(100)
@@ -195,7 +202,8 @@ model Channel {
   serverId   String?
   categoryId String?
   name       String
-  type       ChannelType @default(TEXT)
+  type       ChannelType       @default(TEXT)
+  visibility ChannelVisibility @default(EVERYONE)
   topic      String?
   position   Int         @default(0)
   // Canonical pair of participant ids ("low:high") so get-or-create of a DM is unique.

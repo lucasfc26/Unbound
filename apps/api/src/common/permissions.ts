@@ -1,4 +1,4 @@
-import type { ServerRole } from '@prisma/client';
+import type { ChannelVisibility, ServerRole } from '@prisma/client';
 
 export enum Permission {
   MANAGE_SERVER = 'MANAGE_SERVER',
@@ -66,6 +66,18 @@ export function canManageMember(
     return targetRole === 'MODERATOR' || targetRole === 'MEMBER';
   }
   return false;
+}
+
+/** Who may see a channel in the sidebar and open it on their own. */
+export function canSeeChannel(
+  role: ServerRole,
+  visibility: ChannelVisibility,
+): boolean {
+  if (visibility === 'EVERYONE') return true;
+  if (visibility === 'MODERATORS') {
+    return role === 'OWNER' || role === 'ADMIN' || role === 'MODERATOR';
+  }
+  return role === 'OWNER' || role === 'ADMIN';
 }
 
 export function canAssignRole(

@@ -3,12 +3,19 @@ import { cn } from "@/lib/cn";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { ApiError } from "@/lib/api";
-import type { DensityPreference, ThemePreference } from "@/types";
+import { DEFAULT_CUSTOM_COLORS } from "@/lib/settings";
+import type { CustomThemeColors, DensityPreference, ThemePreference } from "@/types";
 
-const themes: { id: ThemePreference; label: string; disabled?: boolean }[] = [
+const themes: { id: ThemePreference; label: string }[] = [
   { id: "dark", label: "Escuro" },
-  { id: "light", label: "Claro", disabled: true },
-  { id: "system", label: "Sistema", disabled: true },
+  { id: "light", label: "Claro" },
+  { id: "custom", label: "Personalizado" },
+];
+
+const customColorFields: { id: keyof CustomThemeColors; label: string }[] = [
+  { id: "sidebar", label: "Barra lateral" },
+  { id: "background", label: "Tela central" },
+  { id: "text", label: "Cor da fonte" },
 ];
 
 const densities: { id: DensityPreference; label: string }[] = [
@@ -67,16 +74,46 @@ export function AppearanceSettings() {
               key={option.id}
               label={option.label}
               selected={settings.theme === option.id}
-              disabled={option.disabled}
               onSelect={() =>
                 handleChange({ theme: option.id }, "Tema atualizado")
               }
             />
           ))}
         </div>
-        <p className="mt-2 text-caption text-text-muted">
-          O tema claro ainda não está disponível nesta versão.
-        </p>
+
+        {settings.theme === "custom" && (
+          <div className="mt-3 flex flex-col gap-2 rounded-md border border-border bg-surface p-3.5">
+            {customColorFields.map((field) => {
+              const value =
+                settings.customColors?.[field.id] ??
+                DEFAULT_CUSTOM_COLORS[field.id];
+              return (
+                <label
+                  key={field.id}
+                  className="flex items-center justify-between gap-3 text-body text-text-primary"
+                >
+                  {field.label}
+                  <input
+                    type="color"
+                    value={value}
+                    onChange={(event) =>
+                      handleChange(
+                        {
+                          customColors: {
+                            ...settings.customColors,
+                            [field.id]: event.target.value,
+                          },
+                        },
+                        "Cor atualizada",
+                      )
+                    }
+                    className="h-8 w-14 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0.5"
+                  />
+                </label>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section>

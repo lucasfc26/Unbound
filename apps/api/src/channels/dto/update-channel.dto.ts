@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -21,4 +22,8 @@ export class UpdateChannelDto {
   @ValidateIf((_, value) => value !== null)
   @IsUUID()
   categoryId?: string | null;
+
+  @IsOptional()
+  @IsIn(['EVERYONE', 'MODERATORS', 'ADMINS'])
+  visibility?: 'EVERYONE' | 'MODERATORS' | 'ADMINS';
 }

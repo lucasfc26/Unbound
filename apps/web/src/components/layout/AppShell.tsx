@@ -9,6 +9,13 @@ import { useIdlePresence } from "@/hooks/useIdlePresence";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useFriendsStore } from "@/stores/useFriendsStore";
 import { useDmStore } from "@/stores/useDmStore";
+import { hexToRgbTriplet } from "@/lib/color";
+
+const CUSTOM_COLOR_VARS = {
+  sidebar: "--color-bg-secondary",
+  background: "--color-bg-primary",
+  text: "--color-text-primary",
+} as const;
 
 export function AppShell() {
   useIdlePresence();
@@ -28,9 +35,23 @@ export function AppShell() {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = settings?.theme ?? "dark";
+    const theme = settings?.theme ?? "dark";
+    root.dataset.theme = theme;
     root.dataset.density = settings?.density ?? "normal";
-  }, [settings?.theme, settings?.density]);
+
+    for (const [key, cssVar] of Object.entries(CUSTOM_COLOR_VARS)) {
+      if (theme === "custom" && settings?.customColors) {
+        const rgb = hexToRgbTriplet(
+          settings.customColors[key as keyof typeof CUSTOM_COLOR_VARS],
+        );
+        if (rgb) {
+          root.style.setProperty(cssVar, rgb);
+          continue;
+        }
+      }
+      root.style.removeProperty(cssVar);
+    }
+  }, [settings?.theme, settings?.density, settings?.customColors]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg-primary text-text-primary">

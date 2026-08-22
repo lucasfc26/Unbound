@@ -1,16 +1,18 @@
 import { useNavigate } from "react-router-dom";
 import {
+  Mic,
+  MicOff,
   Headphones,
   HeadphoneOff,
   Settings,
   User,
   LogOut,
-  PhoneOff,
   Volume2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
+import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useServerStore } from "@/stores/useServerStore";
 import { Avatar } from "@/components/ui/Avatar";
 import { IconButton } from "@/components/ui/IconButton";
@@ -32,9 +34,15 @@ export function UserArea() {
   const logout = useAuthStore((state) => state.logout);
   const setStatus = useAuthStore((state) => state.setStatus);
   const pushToast = useToastStore((state) => state.push);
+  const micEnabled = useVoiceStore((state) => state.micEnabled);
   const deafened = useVoiceStore((state) => state.deafened);
+  const pttHeld = useVoiceStore((state) => state.pttHeld);
+  const toggleMic = useVoiceStore((state) => state.toggleMic);
   const toggleDeafen = useVoiceStore((state) => state.toggleDeafen);
   const leaveCall = useVoiceStore((state) => state.leave);
+  const pttEnabled = useSettingsStore(
+    (state) => state.settings?.pushToTalkEnabled ?? false,
+  );
 
   if (!user) return null;
 
@@ -93,6 +101,45 @@ export function UserArea() {
           ]}
         />
 
+        <Tooltip
+          content={
+            pttEnabled
+              ? pttHeld
+                ? "Solte para silenciar"
+                : "Push to talk — segure o atalho para falar"
+              : micEnabled
+                ? "Mutar microfone"
+                : "Ativar microfone"
+          }
+        >
+          <IconButton
+            aria-label={
+              pttEnabled
+                ? "Push to talk"
+                : micEnabled
+                  ? "Mutar microfone"
+                  : "Ativar microfone"
+            }
+            size="sm"
+            variant={
+              pttEnabled
+                ? pttHeld
+                  ? "ghost"
+                  : "danger"
+                : micEnabled
+                  ? "ghost"
+                  : "danger"
+            }
+            onClick={toggleMic}
+          >
+            {micEnabled ? (
+              <Mic className="h-4 w-4" />
+            ) : (
+              <MicOff className="h-4 w-4" />
+            )}
+          </IconButton>
+        </Tooltip>
+
         <Tooltip content={deafened ? "Reativar áudio" : "Silenciar tudo"}>
           <IconButton
             aria-label={deafened ? "Reativar áudio" : "Silenciar tudo"}
@@ -139,7 +186,6 @@ function VoicePingLine() {
 function VoiceConnectionBar() {
   const navigate = useNavigate();
   const activeChannelId = useVoiceStore((state) => state.activeChannelId);
-  const leave = useVoiceStore((state) => state.leave);
   const channels = useServerStore((state) => state.channels);
   const servers = useServerStore((state) => state.servers);
 
@@ -150,39 +196,27 @@ function VoiceConnectionBar() {
 
   return (
     <div className="border-t border-black/20 bg-bg-secondary px-2 py-2">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-hover"
-          onClick={() => {
-            if (channel) {
-              navigate(`/app/server/${channel.serverId}/voice/${channel.id}`);
-            }
-          }}
-        >
-          <Volume2 className="h-4 w-4 shrink-0 text-success" />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-small font-semibold text-success">
-              Voz conectada
-            </span>
-            <span className="block truncate text-caption text-text-muted">
-              {channel?.name ?? "Canal de voz"}
-              {server ? ` / ${server.name}` : ""}
-            </span>
-            <VoicePingLine />
+      <button
+        type="button"
+        className="flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-hover"
+        onClick={() => {
+          if (channel) {
+            navigate(`/app/server/${channel.serverId}/voice/${channel.id}`);
+          }
+        }}
+      >
+        <Volume2 className="h-4 w-4 shrink-0 text-success" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-small font-semibold text-success">
+            Voz conectada
           </span>
-        </button>
-        <Tooltip content="Sair da chamada">
-          <IconButton
-            aria-label="Sair da chamada"
-            size="sm"
-            variant="danger"
-            onClick={leave}
-          >
-            <PhoneOff className="h-4 w-4" />
-          </IconButton>
-        </Tooltip>
-      </div>
+          <span className="block truncate text-caption text-text-muted">
+            {channel?.name ?? "Canal de voz"}
+            {server ? ` / ${server.name}` : ""}
+          </span>
+          <VoicePingLine />
+        </span>
+      </button>
     </div>
   );
 }

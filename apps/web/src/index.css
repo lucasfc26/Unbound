@@ -42,19 +42,31 @@
   --radius-xl: 20px;
 }
 
-/*
-  Estrutura preparada para tema claro (não implementado nesta etapa).
-  Trocar o seletor abaixo para `:root[data-theme="light"]` e sobrescrever
-  os tokens acima quando o tema claro for desenvolvido.
-*/
 :root[data-theme="light"] {
-  --color-bg-primary: 10 10 12;
-  --color-bg-secondary: 16 16 19;
-  --color-surface: 22 22 26;
-  --color-surface-elevated: 29 29 34;
-  --color-surface-hover: 34 34 40;
-  --color-surface-active: 41 41 48;
+  /* Superfícies */
+  --color-bg-primary: 255 255 255;
+  --color-bg-secondary: 246 246 248;
+  --color-surface: 255 255 255;
+  --color-surface-elevated: 250 250 252;
+  --color-surface-hover: 240 240 243;
+  --color-surface-active: 232 232 237;
+
+  /* Bordas */
+  --color-border: 226 226 231;
+  --color-border-strong: 210 210 217;
+
+  /* Texto */
+  --color-text-primary: 20 20 24;
+  --color-text-secondary: 100 100 112;
+  --color-text-muted: 148 148 160;
 }
+
+/*
+  O tema "personalizado" parte dos tokens padrão de :root (escuro) e tem
+  --color-bg-secondary (barra lateral), --color-bg-primary (tela central) e
+  --color-text-primary (fonte) sobrescritas via inline style em tempo de
+  execução (ver AppShell), a partir das cores escolhidas pelo usuário.
+*/
 
 html,
 body,

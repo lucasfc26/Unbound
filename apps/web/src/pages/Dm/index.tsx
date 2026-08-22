@@ -162,6 +162,7 @@ export default function DmPage() {
       ) : (
         <>
           <MessageList
+            channelId={channelId}
             messages={liveMessages}
             currentUserId={currentUser?.id}
             onEdit={editMessage}

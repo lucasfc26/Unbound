@@ -1,5 +1,5 @@
 import { apiFetch } from "./api";
-import type { ChannelType } from "@/types";
+import type { ChannelType, ChannelVisibility } from "@/types";
 
 export interface ApiChannelCategory {
   id: string;
@@ -14,6 +14,7 @@ export interface ApiChannel {
   categoryId: string | null;
   name: string;
   type: ChannelType;
+  visibility: ChannelVisibility;
   topic: string | null;
   position: number;
   createdAt: string;
@@ -42,6 +43,7 @@ export function createChannel(
     type: ChannelType;
     categoryId?: string | null;
     topic?: string;
+    visibility?: ChannelVisibility;
   },
 ) {
   return apiFetch<ApiChannel>(`/servers/${serverId}/channels`, {
@@ -53,7 +55,12 @@ export function createChannel(
 export function updateChannel(
   serverId: string,
   channelId: string,
-  input: { name?: string; topic?: string; categoryId?: string | null },
+  input: {
+    name?: string;
+    topic?: string;
+    categoryId?: string | null;
+    visibility?: ChannelVisibility;
+  },
 ) {
   return apiFetch<ApiChannel>(`/servers/${serverId}/channels/${channelId}`, {
     method: "PATCH",
@@ -63,6 +70,36 @@ export function updateChannel(
 
 export function deleteChannel(serverId: string, channelId: string) {
   return apiFetch<void>(`/servers/${serverId}/channels/${channelId}`, {
+    method: "DELETE",
+  });
+}
+
+export function reorderChannels(
+  serverId: string,
+  items: { id: string; categoryId?: string | null; position: number }[],
+) {
+  return apiFetch<void>(`/servers/${serverId}/channels/reorder`, {
+    method: "PATCH",
+    body: { items },
+  });
+}
+
+export function updateCategory(
+  serverId: string,
+  categoryId: string,
+  input: { name: string },
+) {
+  return apiFetch<ApiChannelCategory>(
+    `/servers/${serverId}/categories/${categoryId}`,
+    {
+      method: "PATCH",
+      body: input,
+    },
+  );
+}
+
+export function deleteCategory(serverId: string, categoryId: string) {
+  return apiFetch<void>(`/servers/${serverId}/categories/${categoryId}`, {
     method: "DELETE",
   });
 }

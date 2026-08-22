@@ -26,6 +26,9 @@ function mergeSettings(
     keybinds: input.keybinds
       ? { ...current.keybinds, ...input.keybinds }
       : current.keybinds,
+    customColors: input.customColors
+      ? { ...current.customColors, ...input.customColors }
+      : current.customColors,
   };
 }
 

@@ -16,4 +16,8 @@ export class CreateChannelDto {
   @IsString()
   @Length(0, 200)
   topic?: string;
+
+  @IsOptional()
+  @IsIn(['EVERYONE', 'MODERATORS', 'ADMINS'])
+  visibility?: 'EVERYONE' | 'MODERATORS' | 'ADMINS';
 }

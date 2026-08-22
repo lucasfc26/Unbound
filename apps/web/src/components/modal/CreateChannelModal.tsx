@@ -4,7 +4,12 @@ import { Modal } from "./Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
-import type { ChannelCategory, ChannelType } from "@/types";
+import type {
+  ChannelCategory,
+  ChannelType,
+  ChannelVisibility,
+} from "@/types";
+import { CHANNEL_VISIBILITY_LABELS } from "@/lib/permissions";
 
 interface CreateChannelModalProps {
   open: boolean;
@@ -13,6 +18,7 @@ interface CreateChannelModalProps {
     name: string;
     type: ChannelType;
     categoryId: string | null;
+    visibility: ChannelVisibility;
   }) => void;
   categories: ChannelCategory[];
   defaultType?: ChannelType;
@@ -32,11 +38,13 @@ export function CreateChannelModal({
   const [categoryId, setCategoryId] = useState<string | null>(
     defaultCategoryId,
   );
+  const [visibility, setVisibility] = useState<ChannelVisibility>("EVERYONE");
 
   useEffect(() => {
     if (open) {
       setType(defaultType);
       setCategoryId(defaultCategoryId);
+      setVisibility("EVERYONE");
     }
   }, [open, defaultType, defaultCategoryId]);
 
@@ -46,6 +54,7 @@ export function CreateChannelModal({
       name: name.trim().toLowerCase().replace(/\s+/g, "-"),
       type,
       categoryId,
+      visibility,
     });
     setName("");
   }
@@ -99,6 +108,31 @@ export function CreateChannelModal({
           onChange={(event) => setName(event.target.value)}
           autoFocus
         />
+
+        <div>
+          <label
+            className="mb-1.5 block text-small font-medium text-text-secondary"
+            htmlFor="channel-visibility"
+          >
+            Quem pode ver
+          </label>
+          <select
+            id="channel-visibility"
+            value={visibility}
+            onChange={(event) =>
+              setVisibility(event.target.value as ChannelVisibility)
+            }
+            className="h-10 w-full rounded-md border border-border bg-surface px-3 text-body text-text-primary outline-none focus:border-accent"
+          >
+            {(
+              Object.keys(CHANNEL_VISIBILITY_LABELS) as ChannelVisibility[]
+            ).map((option) => (
+              <option key={option} value={option}>
+                {CHANNEL_VISIBILITY_LABELS[option]}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {categories.length > 0 && (
           <div>

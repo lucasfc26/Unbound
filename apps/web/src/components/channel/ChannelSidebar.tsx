@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   UserPlus,
   FolderPlus,
+  List,
   LogOut,
   Settings,
   Mic,
@@ -21,7 +22,11 @@ import { useToastStore } from "@/stores/useToastStore";
 import { cn } from "@/lib/cn";
 import { ApiError } from "@/lib/api";
 import { avatarColorFor } from "@/lib/avatarColor";
-import { canManageMember, canOpenServerSettings } from "@/lib/permissions";
+import {
+  canManageMember,
+  canOpenServerSettings,
+  canSeeChannel,
+} from "@/lib/permissions";
 import { useFriendMenuItems } from "@/hooks/useFriendMenuItems";
 import { Avatar } from "@/components/ui/Avatar";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
@@ -29,8 +34,14 @@ import { ContextMenu } from "@/components/ui/ContextMenu";
 import { InviteModal } from "@/components/modal/InviteModal";
 import { CreateCategoryModal } from "@/components/modal/CreateCategoryModal";
 import { CreateChannelModal } from "@/components/modal/CreateChannelModal";
+import { EditChannelsModal } from "@/components/modal/EditChannelsModal";
 import { ServerSettingsModal } from "@/components/modal/ServerSettingsModal";
-import type { Channel, ChannelType, ServerRole } from "@/types";
+import type {
+  Channel,
+  ChannelType,
+  ChannelVisibility,
+  ServerRole,
+} from "@/types";
 import type { VoiceRosterEntry } from "@/stores/useVoiceStore";
 
 export function ChannelSidebar() {
@@ -72,6 +83,7 @@ export function ChannelSidebar() {
     open: false,
     type: "TEXT",
   });
+  const [editChannelsOpen, setEditChannelsOpen] = useState(false);
 
   useEffect(() => {
     if (server) {
@@ -97,9 +109,15 @@ export function ChannelSidebar() {
   const channels = useMemo(
     () =>
       server
-        ? allChannels.filter((channel) => channel.serverId === server.id)
+        ? allChannels.filter((channel) => {
+            if (channel.serverId !== server.id) return false;
+            if (canSeeChannel(myRole, channel.visibility)) return true;
+            return (participantsByChannel[channel.id] ?? []).some(
+              (entry) => entry.userId === currentUserId,
+            );
+          })
         : [],
-    [allChannels, server],
+    [allChannels, server, myRole, participantsByChannel, currentUserId],
   );
 
   const uncategorizedChannels = useMemo(
@@ -123,6 +141,7 @@ export function ChannelSidebar() {
     name: string;
     type: ChannelType;
     categoryId: string | null;
+    visibility: ChannelVisibility;
   }) {
     if (!server) return;
     try {
@@ -209,6 +228,11 @@ export function ChannelSidebar() {
           ...(canOpenSettings
             ? [
                 {
+                  label: "Editar canais",
+                  icon: List,
+                  onSelect: () => setEditChannelsOpen(true),
+                },
+                {
                   label: "Configurações do servidor",
                   icon: Settings,
                   onSelect: () => setSettingsOpen(true),
@@ -245,19 +269,23 @@ export function ChannelSidebar() {
           </ul>
         )}
 
-        {categories.map((category) => (
-          <CategoryGroup
-            key={category.id}
-            title={category.name}
-            channels={channels
-              .filter((channel) => channel.categoryId === category.id)
-              .sort((a, b) => a.position - b.position)}
-            serverId={server.id}
-            participantsByChannel={participantsByChannel}
-            speakingChannelId={speakingChannelId}
-            speakingUserId={speakingUserId}
-          />
-        ))}
+        {categories.map((category) => {
+          const categoryChannels = channels
+            .filter((channel) => channel.categoryId === category.id)
+            .sort((a, b) => a.position - b.position);
+          if (categoryChannels.length === 0) return null;
+          return (
+            <CategoryGroup
+              key={category.id}
+              title={category.name}
+              channels={categoryChannels}
+              serverId={server.id}
+              participantsByChannel={participantsByChannel}
+              speakingChannelId={speakingChannelId}
+              speakingUserId={speakingUserId}
+            />
+          );
+        })}
       </div>
 
       <InviteModal
@@ -280,6 +308,14 @@ export function ChannelSidebar() {
         onClose={() => setChannelModal((state) => ({ ...state, open: false }))}
         onCreate={handleChannelCreated}
       />
+
+      {canOpenSettings && (
+        <EditChannelsModal
+          open={editChannelsOpen}
+          onClose={() => setEditChannelsOpen(false)}
+          serverId={server.id}
+        />
+      )}
 
       {canOpenSettings && (
         <ServerSettingsModal
@@ -384,7 +420,8 @@ function ChannelListItem({
     (item) =>
       item.serverId === serverId &&
       item.type === "VOICE" &&
-      item.id !== channel.id,
+      item.id !== channel.id &&
+      canSeeChannel(myRole, item.visibility),
   );
 
   return (

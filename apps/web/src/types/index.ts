@@ -45,8 +45,14 @@ export type KeybindAction =
   | "openSettings"
   | "toggleNoiseSuppression";
 
-export type ThemePreference = "dark" | "light" | "system";
+export type ThemePreference = "dark" | "light" | "custom";
 export type DensityPreference = "compact" | "normal" | "comfortable";
+
+export interface CustomThemeColors {
+  sidebar: string;
+  background: string;
+  text: string;
+}
 
 export interface UserSettings {
   bio: string | null;
@@ -57,6 +63,7 @@ export interface UserSettings {
   desktopNotifications: boolean;
   notificationSound: boolean;
   theme: ThemePreference;
+  customColors: CustomThemeColors;
   density: DensityPreference;
   micGain: number;
   outputGain: number;
@@ -94,6 +101,8 @@ export interface Server {
 
 export type ChannelType = "TEXT" | "VOICE";
 
+export type ChannelVisibility = "EVERYONE" | "MODERATORS" | "ADMINS";
+
 export interface ChannelCategory {
   id: string;
   serverId: string;
@@ -107,6 +116,7 @@ export interface Channel {
   categoryId: string | null;
   name: string;
   type: ChannelType;
+  visibility: ChannelVisibility;
   topic?: string;
   position: number;
 }

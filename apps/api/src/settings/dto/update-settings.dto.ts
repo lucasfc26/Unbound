@@ -50,8 +50,12 @@ export class UpdateSettingsDto {
 
   // Aparência
   @IsOptional()
-  @IsIn(['dark', 'light', 'system'])
-  theme?: 'dark' | 'light' | 'system';
+  @IsIn(['dark', 'light', 'custom'])
+  theme?: 'dark' | 'light' | 'custom';
+
+  @IsOptional()
+  @IsObject()
+  customColors?: Record<string, string>;
 
   @IsOptional()
   @IsIn(['compact', 'normal', 'comfortable'])

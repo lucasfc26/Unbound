@@ -1,5 +1,6 @@
 import { apiFetch } from "./api";
 import { DEFAULT_KEYBINDS } from "./keybinds";
+import { isValidHexColor } from "./color";
 import type {
   FriendRequestPrivacy,
   Keybind,
@@ -8,12 +9,19 @@ import type {
   ThemePreference,
   DensityPreference,
   UserSettings,
+  CustomThemeColors,
   MediaProfile,
   BroadcastMode,
   BroadcastResolution,
   BroadcastCodec,
   BroadcastTransport,
 } from "@/types";
+
+export const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
+  sidebar: "#101013",
+  background: "#0a0a0c",
+  text: "#f0f0f2",
+};
 
 export interface ApiUserSettings {
   userId: string;
@@ -25,6 +33,7 @@ export interface ApiUserSettings {
   desktopNotifications: boolean;
   notificationSound: boolean;
   theme: ThemePreference;
+  customColors: unknown;
   density: DensityPreference;
   micGain: number;
   outputGain: number;
@@ -52,6 +61,7 @@ export interface UpdateUserSettingsInput {
   desktopNotifications?: boolean;
   notificationSound?: boolean;
   theme?: ThemePreference;
+  customColors?: Partial<CustomThemeColors>;
   density?: DensityPreference;
   micGain?: number;
   outputGain?: number;
@@ -78,6 +88,18 @@ function parseKeybinds(
   return { ...DEFAULT_KEYBINDS, ...parsed };
 }
 
+function parseCustomColors(raw: unknown): CustomThemeColors {
+  const parsed = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const result = { ...DEFAULT_CUSTOM_COLORS };
+  for (const key of Object.keys(DEFAULT_CUSTOM_COLORS) as (keyof CustomThemeColors)[]) {
+    const value = parsed[key];
+    if (typeof value === "string" && isValidHexColor(value)) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 export function toUserSettings(api: ApiUserSettings): UserSettings {
   return {
     bio: api.bio,
@@ -88,7 +110,8 @@ export function toUserSettings(api: ApiUserSettings): UserSettings {
     desktopNotifications: api.desktopNotifications,
     notificationSound: api.notificationSound,
     theme:
-      api.theme === "light" || api.theme === "system" ? api.theme : "dark",
+      api.theme === "light" || api.theme === "custom" ? api.theme : "dark",
+    customColors: parseCustomColors(api.customColors),
     density:
       api.density === "compact" || api.density === "comfortable"
         ? api.density

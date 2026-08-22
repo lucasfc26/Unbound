@@ -1,12 +1,13 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import type { Channel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipService } from '../common/membership.service';
-import { Permission } from '../common/permissions';
+import { Permission, canSeeChannel } from '../common/permissions';
 
 export interface VoiceParticipantRef {
   userId: string;
@@ -55,11 +56,17 @@ export class VoiceService {
     if (channel.type !== 'VOICE' || !channel.serverId) {
       throw new BadRequestException('Este canal não é uma sala de voz');
     }
-    await this.membership.assertPermission(
+    const member = await this.membership.assertPermission(
       channel.serverId,
       userId,
       Permission.CONNECT_VOICE,
     );
+    if (
+      !canSeeChannel(member.role, channel.visibility) &&
+      !this.isInChannel(channelId, userId)
+    ) {
+      throw new ForbiddenException('Você não tem acesso a este canal');
+    }
     return channel;
   }
 
@@ -116,6 +123,26 @@ export class VoiceService {
       targetUserId,
       Permission.MOVE_MEMBERS,
     );
+  }
+
+  async assertCanMoveInto(
+    destinationChannelId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    const dest = await this.prisma.channel.findUnique({
+      where: { id: destinationChannelId },
+    });
+    if (!dest) throw new NotFoundException('Canal não encontrado');
+    if (dest.type !== 'VOICE' || !dest.serverId) {
+      throw new BadRequestException('O destino não é uma sala de voz');
+    }
+    const actor = await this.membership.getMembership(
+      dest.serverId,
+      actorUserId,
+    );
+    if (!canSeeChannel(actor.role, dest.visibility)) {
+      throw new ForbiddenException('Você não tem acesso a este canal');
+    }
   }
 
   /**
@@ -212,6 +239,18 @@ export class VoiceService {
 
   isParticipant(channelId: string, userId: string, socketId: string): boolean {
     return this.rooms.get(channelId)?.get(userId)?.socketId === socketId;
+  }
+
+  isInChannel(channelId: string, userId: string): boolean {
+    return this.rooms.get(channelId)?.has(userId) ?? false;
+  }
+
+  channelIdsForUser(userId: string): string[] {
+    const ids: string[] = [];
+    for (const [channelId, room] of this.rooms) {
+      if (room.has(userId)) ids.push(channelId);
+    }
+    return ids;
   }
 
   setMicMuted(channelId: string, userId: string, muted: boolean): void {

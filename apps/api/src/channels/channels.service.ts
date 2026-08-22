@@ -2,8 +2,13 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Channel, ChannelCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipService } from '../common/membership.service';
-import { Permission } from '../common/permissions';
+import {
+  Permission,
+  canSeeChannel,
+  hasPermission,
+} from '../common/permissions';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
+import { VoiceService } from '../voice/voice.service';
 import type { CreateCategoryDto } from './dto/create-category.dto';
 import type { UpdateCategoryDto } from './dto/update-category.dto';
 import type { CreateChannelDto } from './dto/create-channel.dto';
@@ -17,6 +22,7 @@ export class ChannelsService {
     private readonly prisma: PrismaService,
     private readonly membership: MembershipService,
     private readonly emitter: RealtimeEmitterService,
+    private readonly voice: VoiceService,
   ) {}
 
   async listCategories(
@@ -111,11 +117,20 @@ export class ChannelsService {
   }
 
   async listChannels(serverId: string, userId: string): Promise<Channel[]> {
-    await this.membership.getMembership(serverId, userId);
-    return this.prisma.channel.findMany({
+    const member = await this.membership.getMembership(serverId, userId);
+    const channels = await this.prisma.channel.findMany({
       where: { serverId },
       orderBy: { position: 'asc' },
     });
+    if (hasPermission(member.role, Permission.MANAGE_CHANNELS)) {
+      return channels;
+    }
+    const inVoice = new Set(this.voice.channelIdsForUser(userId));
+    return channels.filter(
+      (channel) =>
+        canSeeChannel(member.role, channel.visibility) ||
+        inVoice.has(channel.id),
+    );
   }
 
   async createChannel(
@@ -141,6 +156,7 @@ export class ChannelsService {
         name: dto.name,
         type: dto.type,
         topic: dto.topic,
+        visibility: dto.visibility,
         position,
       },
     });
@@ -168,6 +184,7 @@ export class ChannelsService {
       data: {
         name: dto.name,
         topic: dto.topic,
+        visibility: dto.visibility,
         categoryId: dto.categoryId === undefined ? undefined : dto.categoryId,
       },
     });

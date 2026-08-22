@@ -1,4 +1,4 @@
-import type { ServerRole } from "@/types";
+import type { ChannelVisibility, ServerRole } from "@/types";
 
 export function canOpenServerSettings(role?: ServerRole): boolean {
   return role === "OWNER" || role === "ADMIN" || role === "MODERATOR";
@@ -38,3 +38,20 @@ export const ROLE_LABELS: Record<ServerRole, string> = {
   MODERATOR: "Moderador",
   MEMBER: "Membro",
 };
+
+export const CHANNEL_VISIBILITY_LABELS: Record<ChannelVisibility, string> = {
+  EVERYONE: "Todos os membros",
+  MODERATORS: "Moderadores e administradores",
+  ADMINS: "Somente administradores",
+};
+
+export function canSeeChannel(
+  role?: ServerRole,
+  visibility: ChannelVisibility = "EVERYONE",
+): boolean {
+  if (visibility === "EVERYONE") return true;
+  if (visibility === "MODERATORS") {
+    return role === "OWNER" || role === "ADMIN" || role === "MODERATOR";
+  }
+  return role === "OWNER" || role === "ADMIN";
+}

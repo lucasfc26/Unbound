@@ -15,6 +15,8 @@ import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { Button } from "@/components/ui/Button";
 import { CreateChannelModal } from "@/components/modal/CreateChannelModal";
 import { useUIStore } from "@/stores/useUIStore";
+import { canSeeChannel } from "@/lib/permissions";
+import { useVoiceStore } from "@/stores/useVoiceStore";
 
 export default function ServerPage() {
   const navigate = useNavigate();
@@ -33,6 +35,16 @@ export default function ServerPage() {
   const allChannels = useServerStore((state) => state.channels);
   const allCategories = useServerStore((state) => state.categories);
   const addChannel = useServerStore((state) => state.addChannel);
+  const myRole = useServerStore((state) =>
+    serverId
+      ? state.membersByServer[serverId]?.find(
+          (member) => member.userId === currentUser?.id,
+        )?.role
+      : undefined,
+  );
+  const participantsByChannel = useVoiceStore(
+    (state) => state.participantsByChannel,
+  );
 
   const messagesByChannel = useChatStore((state) => state.messagesByChannel);
   const typingByChannel = useChatStore((state) => state.typingByChannel);
@@ -50,8 +62,16 @@ export default function ServerPage() {
 
   const channels = useMemo(
     () =>
-      server ? allChannels.filter((item) => item.serverId === server.id) : [],
-    [allChannels, server],
+      server
+        ? allChannels.filter((item) => {
+            if (item.serverId !== server.id) return false;
+            if (canSeeChannel(myRole, item.visibility)) return true;
+            return (participantsByChannel[item.id] ?? []).some(
+              (entry) => entry.userId === currentUser?.id,
+            );
+          })
+        : [],
+    [allChannels, server, myRole, participantsByChannel, currentUser?.id],
   );
   const categories = useMemo(
     () =>
@@ -130,6 +150,7 @@ export default function ServerPage() {
       <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
         <ChatHeader channel={channel} />
         <MessageList
+          channelId={channel.id}
           messages={liveMessages}
           currentUserId={currentUser?.id}
           onEdit={editMessage}

@@ -310,6 +310,10 @@ export class RealtimeGateway
       client.data.user.id,
       data.targetUserId,
     );
+    await this.voice.assertCanMoveInto(
+      data.destinationChannelId,
+      client.data.user.id,
+    );
     const { participant, from, to } = await this.voice.moveParticipant(
       data.channelId,
       data.destinationChannelId,

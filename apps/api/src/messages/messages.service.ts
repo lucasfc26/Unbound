@@ -3,10 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type Channel } from '@prisma/client';
+import { Prisma, type Channel, type ServerRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MembershipService } from '../common/membership.service';
-import { Permission } from '../common/permissions';
+import { Permission, canSeeChannel } from '../common/permissions';
+import { VoiceService } from '../voice/voice.service';
 import { toPublicMessage, type PublicMessage } from './message.presenter';
 import { extractFirstUrl } from '../link-preview/link-preview.util';
 import type { CreateMessageDto } from './dto/create-message.dto';
@@ -27,6 +28,7 @@ export class MessagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly membership: MembershipService,
+    private readonly voice: VoiceService,
   ) {}
 
   async resolveChannel(channelId: string): Promise<Channel> {
@@ -43,11 +45,12 @@ export class MessagesService {
       await this.assertDmMember(channelId, userId);
       return channel;
     }
-    await this.membership.assertPermission(
+    const member = await this.membership.assertPermission(
       requireServerId(channel),
       userId,
       Permission.READ_MESSAGES,
     );
+    this.assertChannelVisible(channel, member.role, userId);
     return channel;
   }
 
@@ -57,12 +60,25 @@ export class MessagesService {
       await this.assertDmMember(channelId, userId);
       return channel;
     }
-    await this.membership.assertPermission(
+    const member = await this.membership.assertPermission(
       requireServerId(channel),
       userId,
       Permission.SEND_MESSAGES,
     );
+    this.assertChannelVisible(channel, member.role, userId);
     return channel;
+  }
+
+  private assertChannelVisible(
+    channel: Channel,
+    role: ServerRole,
+    userId: string,
+  ): void {
+    if (canSeeChannel(role, channel.visibility)) return;
+    if (channel.type === 'VOICE' && this.voice.isInChannel(channel.id, userId)) {
+      return;
+    }
+    throw new ForbiddenException('Você não tem acesso a este canal');
   }
 
   private async assertDmMember(channelId: string, userId: string) {
