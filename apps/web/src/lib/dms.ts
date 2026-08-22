@@ -9,16 +9,16 @@ export interface ApiDmConversation {
 }
 
 export function listDms() {
-  return apiFetch<ApiDmConversation[]>("/dms");
+  return apiFetch<ApiDmConversation[]>("/friends/dms");
 }
 
 export function openDm(userId: string) {
-  return apiFetch<ApiDmConversation>("/dms", {
+  return apiFetch<ApiDmConversation>("/friends/dms", {
     method: "POST",
     body: { userId },
   });
 }
 
 export function markDmRead(channelId: string) {
-  return apiFetch<void>(`/dms/${channelId}/read`, { method: "POST" });
+  return apiFetch<void>(`/friends/dms/${channelId}/read`, { method: "POST" });
 }

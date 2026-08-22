@@ -5,7 +5,7 @@ import { DmsService } from './dms.service';
 import { OpenDmDto } from './dto/open-dm.dto';
 
 @UseGuards(JwtAuthGuard)
-@Controller('dms')
+@Controller(['dms', 'friends/dms'])
 export class DmsController {
   constructor(private readonly dms: DmsService) {}
 

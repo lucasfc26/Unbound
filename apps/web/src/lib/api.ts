@@ -31,10 +31,25 @@ export class ApiError extends Error {
   }
 }
 
+const AUTH_NO_REFRESH = new Set([
+  "/auth/login",
+  "/auth/register",
+  "/auth/refresh",
+]);
+
 let accessToken: string | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshInflight: Promise<boolean> | null = null;
+let onAccessTokenRefreshed: (() => void) | null = null;
+
+export function setOnAccessTokenRefreshed(callback: (() => void) | null) {
+  onAccessTokenRefreshed = callback;
+}
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  if (token) scheduleAccessTokenRefresh(token);
+  else clearAccessTokenRefresh();
 }
 
 export function getAccessToken(): string | null {
@@ -43,41 +58,134 @@ export function getAccessToken(): string | null {
 
 interface ApiFetchOptions extends Omit<RequestInit, "body"> {
   body?: unknown;
+  skipRefresh?: boolean;
+}
+
+function throwIfFailed(
+  status: number,
+  payload: { message?: string | string[] },
+): never {
+  const message = Array.isArray(payload.message)
+    ? payload.message.join(", ")
+    : payload.message;
+  throw new ApiError(
+    status,
+    message ?? "Não foi possível completar a solicitação",
+  );
+}
+
+async function readErrorPayload(response: Response): Promise<{
+  message?: string | string[];
+}> {
+  return response.json().catch(() => ({}) as { message?: string });
+}
+
+function readJwtExpiryMs(token: string): number | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(json) as { exp?: number };
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearAccessTokenRefresh() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+/** Renew the access JWT ~1 minute before it dies so a long voice call
+ *  does not suddenly 401 every REST call (settings, chat history, …). */
+function scheduleAccessTokenRefresh(token: string) {
+  clearAccessTokenRefresh();
+  const expiresAt = readJwtExpiryMs(token);
+  const delay = expiresAt
+    ? Math.max(5_000, expiresAt - Date.now() - 60_000)
+    : 12 * 60 * 1000;
+  refreshTimer = setTimeout(() => {
+    void refreshAccessToken();
+  }, delay);
+}
+
+export async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInflight) return refreshInflight;
+  refreshInflight = (async () => {
+    const { loadDesktopSession, saveDesktopSession } = await import(
+      "./desktopSession"
+    );
+    const stored = await loadDesktopSession();
+    try {
+      const data = await apiFetch<{
+        accessToken: string;
+        refreshToken: string;
+      }>("/auth/refresh", {
+        method: "POST",
+        body: stored ? { refreshToken: stored } : undefined,
+        skipRefresh: true,
+      });
+      setAccessToken(data.accessToken);
+      await saveDesktopSession(data.refreshToken);
+      onAccessTokenRefreshed?.();
+      return true;
+    } catch {
+      return false;
+    }
+  })().finally(() => {
+    refreshInflight = null;
+  });
+  return refreshInflight;
+}
+
+async function recoverFromUnauthorized(path: string): Promise<boolean> {
+  if (AUTH_NO_REFRESH.has(path)) return false;
+  return refreshAccessToken();
 }
 
 export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
-  const headers = new Headers(options.headers);
+  const { skipRefresh, body, headers: inputHeaders, ...rest } = options;
+  const headers = new Headers(inputHeaders);
   headers.set("Content-Type", "application/json");
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
   const response = await fetch(`${API_URL}${path}`, {
-    ...options,
+    ...rest,
     headers,
     credentials: "include",
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
+  if (response.status === 401 && !skipRefresh) {
+    const recovered = await recoverFromUnauthorized(path);
+    if (recovered) {
+      return apiFetch<T>(path, { ...options, skipRefresh: true });
+    }
+  }
+
   if (!response.ok) {
-    const body = await response
-      .json()
-      .catch(() => ({}) as { message?: string });
-    const message = Array.isArray(body.message)
-      ? body.message.join(", ")
-      : body.message;
-    throw new ApiError(
-      response.status,
-      message ?? "Não foi possível completar a solicitação",
-    );
+    throwIfFailed(response.status, await readErrorPayload(response));
   }
 
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new ApiError(response.status, "Resposta inválida do servidor");
+  }
 }
 
-export async function apiUpload<T>(path: string, file: File): Promise<T> {
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  didRefresh = false,
+): Promise<T> {
   const headers = new Headers();
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
@@ -91,17 +199,13 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
     body,
   });
 
+  if (response.status === 401 && !didRefresh) {
+    const recovered = await recoverFromUnauthorized(path);
+    if (recovered) return apiUpload<T>(path, file, true);
+  }
+
   if (!response.ok) {
-    const payload = await response
-      .json()
-      .catch(() => ({}) as { message?: string });
-    const message = Array.isArray(payload.message)
-      ? payload.message.join(", ")
-      : payload.message;
-    throw new ApiError(
-      response.status,
-      message ?? "Não foi possível completar a solicitação",
-    );
+    throwIfFailed(response.status, await readErrorPayload(response));
   }
 
   if (response.status === 204) return undefined as T;

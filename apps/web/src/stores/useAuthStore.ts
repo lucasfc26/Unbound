@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { User, UserStatus } from "@/types";
-import { apiFetch, setAccessToken } from "@/lib/api";
+import { apiFetch, setAccessToken, setOnAccessTokenRefreshed } from "@/lib/api";
 import { avatarColorFor } from "@/lib/avatarColor";
 import { getSocket } from "@/lib/socket";
 import type { ApiPrivateUser } from "@/lib/account";
@@ -45,6 +45,9 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => {
   const socket = getSocket();
+  setOnAccessTokenRefreshed(() => {
+    if (!socket.connected) socket.connect();
+  });
 
   // A broadcast status of OFFLINE is always either someone else's real disconnect or our own
   // INVISIBLE masked for other viewers — never something to apply to our own live session, so

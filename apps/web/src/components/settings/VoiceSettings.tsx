@@ -7,7 +7,11 @@ import { useToastStore } from "@/stores/useToastStore";
 import { useDeviceStore } from "@/stores/useDeviceStore";
 import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
-import { getVoicePipeline } from "@/lib/voicePipeline";
+import {
+  audioCaptureConstraints,
+  getVoicePipeline,
+  rmsToGatePercent,
+} from "@/lib/voicePipeline";
 import { PercentSlider } from "./PercentSlider";
 import { KeybindCapture } from "./KeybindCapture";
 import type { Keybind } from "@/types";
@@ -426,17 +430,20 @@ function MicProcessingControls() {
       </div>
 
       {!auto && (
-        <PercentSlider
-          label="Filtro de ruído manual"
-          description="Quanto maior, mais agressivo o corte de ruído de fundo."
-          value={settings.noiseGate}
-          min={0}
-          max={100}
-          onChange={(noiseGate) => {
-            useSettingsStore.getState().patchLocal({ noiseGate });
-            save({ noiseGate });
-          }}
-        />
+        <>
+          <PercentSlider
+            label="Filtro de ruído manual"
+            description="Quanto maior, mais agressivo o corte de ruído de fundo."
+            value={settings.noiseGate}
+            min={0}
+            max={100}
+            onChange={(noiseGate) => {
+              useSettingsStore.getState().patchLocal({ noiseGate });
+              save({ noiseGate });
+            }}
+          />
+          <NoiseFloorMeter gatePercent={settings.noiseGate} />
+        </>
       )}
 
       <div className="mt-4 rounded-md border border-border bg-surface px-3.5">
@@ -463,6 +470,102 @@ function MicProcessingControls() {
         </div>
       )}
     </>
+  );
+}
+
+function NoiseFloorMeter({ gatePercent }: { gatePercent: number }) {
+  const micDeviceId = useDeviceStore((state) => state.micDeviceId);
+  const [levelPercent, setLevelPercent] = useState(0);
+  const rafRef = useRef<number | undefined>(undefined);
+  const streamRef = useRef<MediaStream | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function start() {
+      const pipeline = getVoicePipeline();
+      if (pipeline) {
+        const tick = () => {
+          setLevelPercent(rmsToGatePercent(pipeline.getLevel()));
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        tick();
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioCaptureConstraints(micDeviceId, "manual"),
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        const ctx = new AudioContext();
+        ctxRef.current = ctx;
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.fftSize);
+
+        const tick = () => {
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (const sample of data) {
+            const centered = (sample - 128) / 128;
+            sum += centered * centered;
+          }
+          const rms = Math.sqrt(sum / data.length);
+          setLevelPercent(rmsToGatePercent(rms));
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch {
+        // Sem acesso ao microfone: o medidor fica parado em 0.
+      }
+    }
+
+    start();
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      ctxRef.current?.close().catch(() => {});
+      ctxRef.current = null;
+    };
+  }, [micDeviceId]);
+
+  const leaking = levelPercent >= gatePercent;
+
+  return (
+    <div className="mt-2">
+      <p className="mb-1 text-caption text-text-muted">
+        Ruído captado agora pelo microfone
+      </p>
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface">
+        <div
+          className={cn(
+            "h-full rounded-full transition-[width] duration-75",
+            leaking ? "bg-warning" : "bg-success",
+          )}
+          style={{ width: `${levelPercent}%` }}
+        />
+        <div
+          className="absolute top-0 h-full w-0.5 bg-text-primary/70"
+          style={{ left: `${gatePercent}%` }}
+        />
+      </div>
+      <p className="mt-1 text-caption text-text-muted">
+        {leaking
+          ? "Esse ruído ainda passa pelo filtro — suba a barra acima dele."
+          : "Esse ruído de fundo está sendo bloqueado pelo filtro."}
+      </p>
+    </div>
   );
 }
 

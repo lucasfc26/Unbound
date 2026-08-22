@@ -86,16 +86,23 @@ export class DmsService {
     });
     if (existing) return existing;
 
-    return this.prisma.channel.create({
-      data: {
-        name: 'dm',
-        type: 'DM',
-        dmKey,
-        members: {
-          create: [{ userId: low }, { userId: high }],
+    try {
+      return await this.prisma.channel.create({
+        data: {
+          name: 'dm',
+          type: 'DM',
+          dmKey,
+          members: {
+            create: [{ userId: low }, { userId: high }],
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      // Two tabs opening the same DM at once can race the unique dmKey.
+      const raced = await this.prisma.channel.findUnique({ where: { dmKey } });
+      if (raced) return raced;
+      throw error;
+    }
   }
 
   private async presentConversation(

@@ -839,7 +839,7 @@ async function performRealJoin(
         raw.getTracks().forEach((track) => track.stop());
         return;
       }
-      const pipeline = createVoicePipeline(raw, {
+      const pipeline = await createVoicePipeline(raw, {
         micGain: settings?.micGain ?? 100,
         noiseMode,
         noiseGate: settings?.noiseGate ?? 40,

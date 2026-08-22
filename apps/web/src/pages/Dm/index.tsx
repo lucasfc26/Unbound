@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useChatStore } from "@/stores/useChatStore";
-import { useDmStore } from "@/stores/useDmStore";
+import { useDmStore, type DmConversation } from "@/stores/useDmStore";
 import { useFriendsStore } from "@/stores/useFriendsStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { ApiError } from "@/lib/api";
 import { statusLabels } from "@/lib/status";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
@@ -39,6 +41,7 @@ export default function DmPage() {
   const stopTyping = useChatStore((state) => state.stopTyping);
 
   const [channelId, setChannelId] = useState<string | null>(null);
+  const [conversation, setConversation] = useState<DmConversation | null>(null);
   const [opening, setOpening] = useState(true);
 
   useEffect(() => {
@@ -46,14 +49,29 @@ export default function DmPage() {
     let cancelled = false;
     setOpening(true);
     setChannelId(null);
+    setConversation(null);
     openWith(userId)
-      .then(async (conversation) => {
+      .then(async (opened) => {
         if (cancelled) return;
-        setChannelId(conversation.channelId);
-        setActiveChannelId(conversation.channelId);
-        joinChannel(conversation.channelId);
-        await loadHistory(conversation.channelId);
-        await markRead(conversation.channelId);
+        setConversation(opened);
+        setChannelId(opened.channelId);
+        setActiveChannelId(opened.channelId);
+        joinChannel(opened.channelId);
+        try {
+          await loadHistory(opened.channelId);
+        } catch (error) {
+          pushToast(
+            "error",
+            error instanceof ApiError
+              ? error.message
+              : "Não foi possível carregar o histórico",
+          );
+        }
+        try {
+          await markRead(opened.channelId);
+        } catch {
+          // opening the thread still succeeds if the receipt write fails
+        }
       })
       .catch((error) => {
         if (cancelled) return;
@@ -93,7 +111,7 @@ export default function DmPage() {
     };
   }, [channelId, markRead]);
 
-  const other = friend?.user;
+  const other = conversation?.user ?? friend?.user;
   const liveMessages = channelId ? (messagesByChannel[channelId] ?? []) : [];
   const typingUsers = (
     channelId ? (typingByChannel[channelId] ?? []) : []
@@ -102,6 +120,16 @@ export default function DmPage() {
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-bg-primary">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-black/20 px-4 shadow-sm">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="shrink-0"
+          onClick={() => navigate("/app/friends")}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Voltar
+        </Button>
         {other ? (
           <>
             <Avatar
