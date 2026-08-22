@@ -1,7 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import {
-  Mic,
-  MicOff,
   Headphones,
   HeadphoneOff,
   Settings,
@@ -13,7 +11,6 @@ import {
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { useVoiceStore } from "@/stores/useVoiceStore";
-import { useSettingsStore } from "@/stores/useSettingsStore";
 import { useServerStore } from "@/stores/useServerStore";
 import { Avatar } from "@/components/ui/Avatar";
 import { IconButton } from "@/components/ui/IconButton";
@@ -35,15 +32,9 @@ export function UserArea() {
   const logout = useAuthStore((state) => state.logout);
   const setStatus = useAuthStore((state) => state.setStatus);
   const pushToast = useToastStore((state) => state.push);
-  const micEnabled = useVoiceStore((state) => state.micEnabled);
   const deafened = useVoiceStore((state) => state.deafened);
-  const pttHeld = useVoiceStore((state) => state.pttHeld);
-  const toggleMic = useVoiceStore((state) => state.toggleMic);
   const toggleDeafen = useVoiceStore((state) => state.toggleDeafen);
   const leaveCall = useVoiceStore((state) => state.leave);
-  const pttEnabled = useSettingsStore(
-    (state) => state.settings?.pushToTalkEnabled ?? false,
-  );
 
   if (!user) return null;
 
@@ -102,45 +93,6 @@ export function UserArea() {
           ]}
         />
 
-        <Tooltip
-          content={
-            pttEnabled
-              ? pttHeld
-                ? "Solte para silenciar"
-                : "Push to talk — segure o atalho para falar"
-              : micEnabled
-                ? "Mutar microfone"
-                : "Ativar microfone"
-          }
-        >
-          <IconButton
-            aria-label={
-              pttEnabled
-                ? "Push to talk"
-                : micEnabled
-                  ? "Mutar microfone"
-                  : "Ativar microfone"
-            }
-            size="sm"
-            variant={
-              pttEnabled
-                ? pttHeld
-                  ? "ghost"
-                  : "danger"
-                : micEnabled
-                  ? "ghost"
-                  : "danger"
-            }
-            onClick={toggleMic}
-          >
-            {micEnabled ? (
-              <Mic className="h-4 w-4" />
-            ) : (
-              <MicOff className="h-4 w-4" />
-            )}
-          </IconButton>
-        </Tooltip>
-
         <Tooltip content={deafened ? "Reativar áudio" : "Silenciar tudo"}>
           <IconButton
             aria-label={deafened ? "Reativar áudio" : "Silenciar tudo"}
@@ -163,17 +115,6 @@ export function UserArea() {
             onClick={() => navigate("/app/settings")}
           >
             <Settings className="h-4 w-4" />
-          </IconButton>
-        </Tooltip>
-
-        <Tooltip content="Sair da conta">
-          <IconButton
-            aria-label="Sair da conta"
-            size="sm"
-            variant="danger"
-            onClick={() => void handleLogout()}
-          >
-            <LogOut className="h-4 w-4" />
           </IconButton>
         </Tooltip>
       </div>

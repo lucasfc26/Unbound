@@ -21,6 +21,7 @@ export interface BroadcastSettings {
   broadcastMode: BroadcastMode;
   broadcastResolution: BroadcastResolution;
   broadcastMaxBitrateKbps: number;
+  broadcastFps: number;
   broadcastCodec: BroadcastCodec;
   broadcastTransport: BroadcastTransport;
 }
@@ -30,6 +31,7 @@ export const DEFAULT_BROADCAST_SETTINGS: BroadcastSettings = {
   broadcastMode: "auto",
   broadcastResolution: "720p",
   broadcastMaxBitrateKbps: 2000,
+  broadcastFps: 30,
   broadcastCodec: "auto",
   broadcastTransport: "auto",
 };
@@ -78,7 +80,8 @@ export function resolveScreenShareEncodings(
       !targetHeight || !captureHeight
         ? 1
         : Math.max(1, captureHeight / targetHeight);
-    return [{ maxBitrate, scaleResolutionDownBy, maxFramerate: 30 }];
+    const maxFramerate = Math.max(15, Math.min(60, settings.broadcastFps));
+    return [{ maxBitrate, scaleResolutionDownBy, maxFramerate }];
   }
 
   const gaming = settings.mediaProfile === "gaming";
@@ -98,7 +101,7 @@ export function resolveScreenShareEncodings(
     {
       rid: "r2",
       scaleResolutionDownBy: 1,
-      maxBitrate: gaming ? 2_500_000 : 2_000_000,
+      maxBitrate: gaming ? 5_000_000 : 2_000_000,
       maxFramerate: gaming ? 60 : 30,
     },
   ];

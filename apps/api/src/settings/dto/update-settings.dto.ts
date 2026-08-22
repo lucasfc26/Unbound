@@ -112,6 +112,13 @@ export class UpdateSettingsDto {
   broadcastMaxBitrateKbps?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(15)
+  @Max(60)
+  broadcastFps?: number;
+
+  @IsOptional()
   @IsIn(['auto', 'vp8', 'vp9', 'h264'])
   broadcastCodec?: 'auto' | 'vp8' | 'vp9' | 'h264';
 

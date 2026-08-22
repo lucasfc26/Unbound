@@ -27,6 +27,7 @@ const DEFAULTS = {
   broadcastMode: 'auto',
   broadcastResolution: '720p',
   broadcastMaxBitrateKbps: 2000,
+  broadcastFps: 30,
   broadcastCodec: 'auto',
   broadcastTransport: 'auto',
 };

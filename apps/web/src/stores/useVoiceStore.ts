@@ -1649,10 +1649,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const audioConstraint: boolean | RestrictOwnAudioConstraints =
         supportsRestrictOwnAudio ? { restrictOwnAudio: true } : true;
 
+      // In manual mode, cap the capture itself at the chosen fps — otherwise
+      // the browser captures at its own default (often the display's refresh
+      // rate) and only the encoder downstream throttles it.
+      const videoConstraint: boolean | MediaTrackConstraints =
+        settings.broadcastMode === "manual"
+          ? { frameRate: { ideal: settings.broadcastFps, max: settings.broadcastFps } }
+          : true;
+
       let screenStream: MediaStream;
       try {
         screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: videoConstraint,
           audio: audioConstraint,
         });
       } catch {

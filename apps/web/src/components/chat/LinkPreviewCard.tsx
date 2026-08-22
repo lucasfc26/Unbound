@@ -1,12 +1,11 @@
 import { Link2 } from "lucide-react";
 import type { LinkPreview } from "@/types";
+import { ChatLink } from "./ChatLink";
 
 export function LinkPreviewCard({ preview }: { preview: LinkPreview }) {
   return (
-    <a
+    <ChatLink
       href={preview.url}
-      target="_blank"
-      rel="noreferrer"
       className="mt-2 block max-w-md rounded-md border border-border bg-surface p-3 transition-colors duration-150 hover:bg-hover"
     >
       <p className="mb-1 flex items-center gap-1.5 text-caption font-semibold text-accent">
@@ -22,6 +21,6 @@ export function LinkPreviewCard({ preview }: { preview: LinkPreview }) {
         </p>
       )}
       <p className="mt-1.5 text-caption text-text-muted">{preview.domain}</p>
-    </a>
+    </ChatLink>
   );
 }

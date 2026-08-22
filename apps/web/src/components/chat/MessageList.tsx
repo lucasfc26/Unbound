@@ -5,6 +5,8 @@ import { formatDayLabel, formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { LinkPreviewCard } from "./LinkPreviewCard";
+import { ChatLink } from "./ChatLink";
+import { splitContentLinks } from "@/lib/openExternalUrl";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -197,7 +199,19 @@ function MessageLine({
   return (
     <div className="group/line relative -mx-1 rounded px-1 hover:bg-hover/60">
       <p className="whitespace-pre-wrap break-words text-body leading-relaxed text-text-primary">
-        {message.content}
+        {splitContentLinks(message.content).map((part, index) =>
+          part.href ? (
+            <ChatLink
+              key={`${part.href}-${index}`}
+              href={part.href}
+              className="text-accent underline-offset-2 hover:underline"
+            >
+              {part.text}
+            </ChatLink>
+          ) : (
+            <Fragment key={index}>{part.text}</Fragment>
+          ),
+        )}
         {message.editedAt && (
           <span className="ml-1 text-caption text-text-muted">(editado)</span>
         )}

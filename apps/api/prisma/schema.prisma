@@ -116,6 +116,7 @@ model UserSettings {
   broadcastMode           String @default("auto")
   broadcastResolution     String @default("720p")
   broadcastMaxBitrateKbps Int    @default(2000)
+  broadcastFps            Int    @default(30)
   broadcastCodec          String @default("auto")
   broadcastTransport      String @default("auto")
 

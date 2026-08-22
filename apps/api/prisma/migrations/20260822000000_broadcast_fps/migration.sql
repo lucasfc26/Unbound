@@ -1,0 +1,2 @@
+ALTER TABLE "user_settings"
+  ADD COLUMN "broadcastFps" INTEGER NOT NULL DEFAULT 30;

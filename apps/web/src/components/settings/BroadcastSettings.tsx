@@ -187,6 +187,8 @@ export function BroadcastSettings() {
 
             <BitrateSlider />
 
+            <FpsSlider />
+
             <div>
               <p className="mb-2 text-small font-medium text-text-primary">
                 Codec de vídeo
@@ -281,6 +283,58 @@ function BitrateSlider() {
         }}
         className="h-1.5 w-full cursor-pointer accent-accent"
       />
+    </div>
+  );
+}
+
+function FpsSlider() {
+  const settings = useSettingsStore((state) => state.settings);
+  const update = useSettingsStore((state) => state.update);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(
+    () => () => {
+      if (timer.current !== undefined) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  if (!settings) return null;
+
+  function save(broadcastFps: number) {
+    if (timer.current !== undefined) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      update({ broadcastFps }).catch(() => {});
+    }, 350);
+  }
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <p className="text-small font-medium text-text-primary">
+          Taxa de quadros (FPS)
+        </p>
+        <p className="text-caption text-text-muted">
+          {settings.broadcastFps} fps
+        </p>
+      </div>
+      <input
+        type="range"
+        min={15}
+        max={60}
+        step={1}
+        value={settings.broadcastFps}
+        onChange={(event) => {
+          const value = Number(event.target.value);
+          useSettingsStore.getState().patchLocal({ broadcastFps: value });
+          save(value);
+        }}
+        className="h-1.5 w-full cursor-pointer accent-accent"
+      />
+      <p className="mt-1 text-caption text-text-muted">
+        Mais fps deixa a transmissão mais fluida (bom pra jogos rápidos), mas
+        usa mais banda e CPU no encode.
+      </p>
     </div>
   );
 }

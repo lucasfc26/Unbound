@@ -68,6 +68,7 @@ export interface UserSettings {
   broadcastMode: BroadcastMode;
   broadcastResolution: BroadcastResolution;
   broadcastMaxBitrateKbps: number;
+  broadcastFps: number;
   broadcastCodec: BroadcastCodec;
   broadcastTransport: BroadcastTransport;
 }

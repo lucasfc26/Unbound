@@ -36,6 +36,7 @@ export interface ApiUserSettings {
   broadcastMode: BroadcastMode;
   broadcastResolution: BroadcastResolution;
   broadcastMaxBitrateKbps: number;
+  broadcastFps: number;
   broadcastCodec: BroadcastCodec;
   broadcastTransport: BroadcastTransport;
   createdAt: string;
@@ -62,6 +63,7 @@ export interface UpdateUserSettingsInput {
   broadcastMode?: BroadcastMode;
   broadcastResolution?: BroadcastResolution;
   broadcastMaxBitrateKbps?: number;
+  broadcastFps?: number;
   broadcastCodec?: BroadcastCodec;
   broadcastTransport?: BroadcastTransport;
 }
@@ -106,6 +108,7 @@ export function toUserSettings(api: ApiUserSettings): UserSettings {
       ? api.broadcastResolution
       : "720p",
     broadcastMaxBitrateKbps: api.broadcastMaxBitrateKbps ?? 2000,
+    broadcastFps: Math.min(60, Math.max(15, api.broadcastFps ?? 30)),
     broadcastCodec: ["auto", "vp8", "vp9", "h264"].includes(api.broadcastCodec)
       ? api.broadcastCodec
       : "auto",
